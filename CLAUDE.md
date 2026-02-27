@@ -4,20 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the Rings Online Stream-Overlays. Verteilt als `LOTRO-Death-Tracker-v5.zip` an Streamer.
+LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the Rings Online Stream-Overlays. Ab v2.0 über GitHub Releases verteilt.
 
-**Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de
+**Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
-> **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur: JSON-Datei, Class-basierter Fetcher, Polling-Loop). Die maßgeblichen Quellen sind die tatsächlichen Dateien im ZIP und in diesem Repository.
+> **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
 
-### Dateien in diesem Repository
+### Repository-Struktur
 
-| Datei | Zweck | Wo deployed |
+| Pfad | Zweck | Wo deployed |
 |---|---|---|
-| `LOTRO-Death-Tracker-v5.zip` | Distributions-Paket für Streamer | An Streamer weitergeben |
-| `lotro-death-tracker.php` | WordPress REST API Plugin | `dodaswelt.de` WP-Plugin-Verzeichnis |
-| `streamelements-overlay-minimalist.html` | Stream-Overlay (HTML/CSS/JS) | StreamElements Custom Widget |
-| `lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` eingebunden |
+| `Client/` | Node.js Client (Watcher, Installer, Updater) | `C:\LOTRO-Death-Tracker\` auf Streamer-PC |
+| `LOTRO-Plugin/` | Lua Plugin für LOTRO | `Documents\...\Plugins\DodasWelt\` |
+| `WordPress/lotro-death-tracker.php` | WordPress REST API Plugin | `dodaswelt.de` WP-Plugin-Verzeichnis |
+| `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay | StreamElements Custom Widget |
+| `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
+| `INSTALL.bat` | Erstinstallation für Streamer | Im Distributions-ZIP |
+| `UPDATE.bat` | Upgrade v1.5 → v2.0 für bestehende Nutzer | Im Distributions-ZIP |
 
 ---
 
@@ -43,6 +46,7 @@ npm run test-service       # Watcher sichtbar im Vordergrund testen
 
 # Logs live verfolgen (PowerShell)
 Get-Content C:\LOTRO-Death-Tracker\client.log -Wait -Tail 20
+Get-Content C:\LOTRO-Death-Tracker\watcher.log -Wait -Tail 20
 
 # API manuell testen (PowerShell)
 Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/health" -Method GET
@@ -85,21 +89,47 @@ LOTRO (Spiel)
 
 **Node.js Client**:
 - `Client/client.js` — File-Watcher & API-Sender
-- `Client/install-autostart.js` — Erstellt `lotro-watcher.js` + `start-lotro-watcher.vbs` dynamisch und kopiert VBS in Windows Startup-Ordner
+- `Client/install-autostart.js` — Generiert `lotro-watcher.js` + `start-lotro-watcher.vbs` dynamisch, kopiert VBS in Startup-Ordner
+- `Client/updater.js` — Wird vom Watcher nach erkanntem Update gespawnt; führt `npm install` + `install-autostart.js install` aus, schreibt `version.json`, löscht sich selbst
+- `Client/version.json.template` — Template für installierte Version (wird bei Installation zu `version.json` kopiert)
 - `Client/package.json`
 - Installationspfad: `C:\LOTRO-Death-Tracker\`
 - Logs: `C:\LOTRO-Death-Tracker\client.log`, `C:\LOTRO-Death-Tracker\watcher.log`
 
-**Installer**:
-- `INSTALL.bat` — Kopiert Plugin + Client, führt `npm install` und `node install-autostart.js install` aus
+**Installer / Updater**:
+- `INSTALL.bat` — Erstinstallation: kopiert Plugin + Client, `npm install`, `install-autostart.js install`
+- `UPDATE.bat` — Upgrade von v1.5: stoppt alten Autostart, ersetzt Dateien, `npm install`, Plugin + Autostart neu
 
 ### Autostart-System
 
-`install-autostart.js` generiert zwei Dateien dynamisch (werden NICHT versioniert, sondern zur Laufzeit erstellt):
-- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend
+`install-autostart.js` generiert zwei Dateien dynamisch (NICHT versioniert, zur Laufzeit erstellt):
+- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung.
 - `start-lotro-watcher.vbs` — Startet den Watcher unsichtbar (kein Konsolenfenster)
 
 Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
+
+### Auto-Update-System (ab v2.0)
+
+**Watcher-Update-Ablauf:**
+```
+Watcher startet
+  → checkAndApplyUpdate(): GET api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest
+  → version.json lesen → vergleichen
+  → Kein Update: normal weiter (LOTRO-Check-Loop)
+  → Update verfügbar:
+       → client.js, install-autostart.js, package.json, updater.js herunterladen (raw.githubusercontent.com)
+       → updater.js als detached Prozess spawnen (windowsHide: true)
+       → Client-Prozess beenden (falls läuft)
+       → Watcher beendet sich
+         ↓
+  updater.js (wartet 3s):
+       → npm install
+       → node install-autostart.js install (regeneriert Watcher + startet ihn)
+       → version.json aktualisieren
+       → updater.js löscht sich selbst
+```
+
+**Randfälle:** Kein Internet / GitHub nicht erreichbar → still überspringen. Download-Fehler → `.tmp`-Datei verwerfen, Original bleibt intakt.
 
 ### PluginData Format
 
@@ -109,7 +139,7 @@ Das Plugin speichert via `Turbine.DataScope.Character` eine **Lua-Tabelle** (nic
   ["lastUpdate"] = 1234567890.0,
   ["eventType"] = "death",
   ["content"] = "{\"characterName\":\"Dodaman\",\"eventType\":\"death\",...}",
-  ["version"] = "2.0.0",
+  ["version"] = "2.0",
 }
 ```
 Das `content`-Feld ist ein escaped JSON-String. Der Client unescaped mit `.replace(/\\"/g, '"')` vor `JSON.parse()`.
@@ -129,19 +159,21 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 
 1. **`windowsHide: true`** — ALLE `exec()` und `spawn()` Aufrufe im Watcher MÜSSEN diese Option haben, sonst öffnet Windows alle 5 Sekunden ein CMD-Fenster.
 
-2. **Package-Name konsistenz** — `.plugin`-Datei muss `<Package>DodasWelt.DeathTracker.Main</Package>` enthalten (entspricht `Main.lua` Dateiname).
+2. **Package-Name Konsistenz** — `.plugin`-Datei muss `<Package>DodasWelt.DeathTracker.Main</Package>` enthalten (entspricht `Main.lua` Dateiname).
 
-3. **`cd /d "%~dp0"`** — Muss als erste aktive Zeile in `INSTALL.bat` stehen, sonst scheitert der Installer bei Ausführung aus einem anderen Verzeichnis.
+3. **`cd /d "%~dp0"`** — Muss als erste aktive Zeile in `INSTALL.bat` und `UPDATE.bat` stehen, sonst scheitern die Skripte bei Ausführung aus einem anderen Verzeichnis.
 
 4. **`copy` statt `xcopy`** — Wildcards mit `xcopy /I` sind unzuverlässig; immer einzelne Dateien per `copy` kopieren.
 
 5. **chokidar `ignoreInitial: true`** — Der Client verarbeitet beim Start KEINE bestehenden Dateien, nur neue Änderungen.
 
-6. **PHP-Version-Diskrepanz** — Plugin-Header sagt `Version: 2.0.0`, aber `$db_version = '2.0.3'`. Die DB-Version ist maßgeblich für Migrationen; bei Schema-Änderungen nur `$db_version` erhöhen.
+6. **`POST /death/next` erwartet `id`** — Das Overlay sendet `{ id: deathId }`. Der Server markiert nur den Eintrag als gezeigt, dessen ID übereinstimmt. Ohne ID-Angabe fällt er auf den ältesten unverarbeiteten Eintrag zurück (Rückwärtskompatibilität).
 
-7. **`POST /death/next` erwartet `id`** — Das Overlay sendet `{ id: deathId }`. Der Server markiert nur den Eintrag als gezeigt, dessen ID übereinstimmt. Ohne ID-Angabe fällt er auf den ältesten unverarbeiteten Eintrag zurück (Rückwärtskompatibilität).
+7. **CORS nur auf eigene Routen** — `add_cors_headers()` prüft `$_SERVER['REQUEST_URI']` auf `/wp-json/lotro-deaths/` und kehrt sonst sofort zurück. Nicht auf alle WP-Seiten ausweiten.
 
-8. **CORS nur auf eigene Routen** — `add_cors_headers()` prüft `$_SERVER['REQUEST_URI']` auf `/wp-json/lotro-deaths/` und kehrt sonst sofort zurück. Nicht auf alle WP-Seiten ausweiten.
+8. **Watcher-Template-Escaping** — `createWatcherScript()` in `install-autostart.js` ist ein Backtick-Template. Keine verschachtelten Template-Literals im generierten Watcher-Code verwenden (String-Konkatenation stattdessen), da sonst Escape-Hölle entsteht.
+
+9. **WP Plugin ZIP-Struktur** — Das `lotro-death-tracker.zip` Release-Asset muss den Plugin-Ordner direkt enthalten: `lotro-death-tracker/lotro-death-tracker.php`. Nur dann funktioniert der WordPress-Update-Mechanismus korrekt.
 
 ---
 
@@ -175,9 +207,9 @@ DELETE /wp-json/lotro-deaths/v1/streamers/mapping # Mapping löschen [Admin-Auth
 - `wp_lotro_characters` – Charakter-Statistiken: `character_name, current_level, total_deaths, last_seen`
 - `wp_lotro_streamer_mapping` – Zuordnung: `twitch_username, character_name, display_name, race, character_class` (UNIQUE auf `twitch_username` und `character_name`)
 
-DB-Migration läuft automatisch via `maybe_upgrade()` (`plugins_loaded`-Hook), gesteuert über WP-Option `lotro_death_tracker_db_version` (aktuell `2.0.3`).
+DB-Migration läuft automatisch via `maybe_upgrade()` (`plugins_loaded`-Hook), gesteuert über WP-Option `lotro_death_tracker_db_version` (aktuell `2.0`).
 
-**Kritisch:** `dbDelta` fügt bei bestehenden Tabellen manchmal keine neuen Spalten hinzu. Deshalb enthält `create_tables()` nach `dbDelta` einen expliziten `SHOW COLUMNS`-Check mit `ALTER TABLE` als Fallback. Bei jeder neuen Spalte zur Deaths-Tabelle **muss** dieser Block erweitert werden. Die DB-Version in `$db_version` muss bei jeder Schema-Änderung erhöht werden, damit `maybe_upgrade()` die Migration erneut ausführt.
+**Kritisch:** `dbDelta` fügt bei bestehenden Tabellen manchmal keine neuen Spalten hinzu. Deshalb enthält `create_tables()` nach `dbDelta` einen expliziten `SHOW COLUMNS`-Check mit `ALTER TABLE` als Fallback. Bei jeder neuen Spalte **muss** dieser Block erweitert werden. Die DB-Version in `$db_version` muss bei jeder Schema-Änderung erhöht werden, damit `maybe_upgrade()` die Migration erneut ausführt.
 
 **Reihenfolge in `api_submit_event`:** Erst `INSERT` in `wp_lotro_deaths`, dann `upsert_character`. Nicht umkehren – sonst wird der Todes-Counter erhöht, auch wenn der Queue-Eintrag fehlschlägt.
 
@@ -216,12 +248,37 @@ IIFE-Modul-Pattern — wird als `LOTROData` global verfügbar. Öffentliche API:
 
 ---
 
-## Distribution
+## Distribution & Releases
 
-Das Distributions-ZIP enthält `LOTRO-Death-Tracker-FINAL/` mit:
-- `INSTALL.bat`, `ANLEITUNG.md`
-- `node-v24.13.1-x64.msi` (31 MB, Node.js Installer für Endnutzer)
-- `Client/` und `LOTRO-Plugin/`
+### GitHub Releases (ab v2.0)
+
+Jeder Release enthält zwei ZIP-Assets:
+
+| Asset | Inhalt | Für wen |
+|---|---|---|
+| `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, `INSTALL.bat`, `UPDATE.bat`, `ANLEITUNG.md` | Streamer (Erst- und Upgrade-Installation) |
+| `lotro-death-tracker.zip` | `lotro-death-tracker/lotro-death-tracker.php` | WordPress Auto-Update-Mechanismus |
+
+**Release erstellen** (wenn der Nutzer es mitteilt):
+```bash
+# ZIPs erstellen (via python3, da zip meist nicht installiert)
+python3 -c "import shutil; shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')"
+
+# GitHub Release + Tag anlegen
+gh release create vX.Y \
+  --title "vX.Y – ..." \
+  --notes "..." \
+  LOTRO-Death-Tracker-vX.Y.zip \
+  lotro-death-tracker.zip
+```
+
+### LOTRO-Pfad-Erkennung (INSTALL.bat, UPDATE.bat, client.js)
+
+Prüfreihenfolge:
+1. Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders\Personal`
+2. OneDrive: `%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online`
+3. Standard: `%USERPROFILE%\Documents\The Lord of the Rings Online`
+4. Manuelle Eingabe (wenn alle Fallbacks scheitern)
 
 StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH` (1920×1080)
 
@@ -231,20 +288,32 @@ StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/
 
 - **Schema:** `MAJOR.MINOR` (z. B. `2.0`, `2.1`, `2.2`)
 - Jedes neue Feature = neue Minor-Version. Kein Patch-Level für End-Nutzer.
-- `version.json` auf dem Client (lokal), Plugin-Header-Version im PHP und `$db_version` folgen alle demselben Tag.
-- GitHub Releases sind die maßgebliche Quelle für aktuelle Versionen (Tag-Format: `v2.0`, `v2.1` usw.).
+- GitHub Releases sind die maßgebliche Quelle (Tag-Format: `v2.0`, `v2.1` usw.).
 - `$db_version` muss bei jeder DB-Schemaänderung auf die aktuelle Minor-Version gesetzt werden.
+
+Bei jedem Release alle Versionsnummern synchron halten:
+
+| Datei/Feld | Beispielwert |
+|---|---|
+| PHP Plugin-Header `Version:` | `2.1` |
+| PHP `$db_version` | `'2.1'` (nur bei DB-Änderung erhöhen) |
+| `Client/package.json` `"version"` | `"2.1"` |
+| `Client/version.json.template` | `{ "version": "2.1" }` |
+| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.1` |
+| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.1"` |
+| Git-Tag | `v2.1` |
 
 ## WordPress Plugin Auto-Update
 
-Ab v2.0 wird das WP-Plugin über den normalen WordPress-Update-Mechanismus aktualisiert. Technisch: `pre_set_site_transient_update_plugins`-Filter fragt die GitHub Releases API ab und stellt Update-Informationen bereit, wenn Remote-Version > installierte Version. Kein manuelles Reinstallieren nötig.
+Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
+- `pre_set_site_transient_update_plugins`-Filter → `check_for_update()`: fragt GitHub API ab, cached 12h via WP-Transient (`lotro_death_tracker_update_info`)
+- `plugins_api`-Filter → `plugin_info()`: liefert Details für WP-Update-Popup
+- Sucht nach Release-Asset `lotro-death-tracker*.zip` (muss Struktur `lotro-death-tracker/lotro-death-tracker.php` haben)
 
 ## lotro-data-fetcher.js — CDN-Einbindung
 
-Ab v2.0 wird `Website/lotro-data-fetcher.js` über jsDelivr ausgeliefert. Einbindung auf `herrin-inge.de`:
-
+Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
 <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.0/Website/lotro-data-fetcher.js"></script>
 ```
-
-Bei einem neuen Release (z. B. `v2.1`) muss nur der Tag in der URL aktualisiert werden (`@v2.0` → `@v2.1`). jsDelivr cached Dateien — nach einem neuen Tag dauert es wenige Minuten bis zur Verfügbarkeit.
+Bei neuem Release: `@v2.0` → `@v2.1` im Script-Tag aktualisieren.
