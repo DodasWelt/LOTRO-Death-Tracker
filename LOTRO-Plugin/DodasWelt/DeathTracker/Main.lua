@@ -1,7 +1,7 @@
 -- DeathTracker Plugin for LOTRO v2.0
 -- Detects player death AND level ups, logs to file for stream overlay integration
 -- Author: DodasWelt
--- Version: 2.0.0
+-- Version: 2.0
 
 import "Turbine";
 import "Turbine.Gameplay";
@@ -13,7 +13,7 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "2.0.0",
+    version = "2.0",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
     lastLevelWasLogged = false,

@@ -3,7 +3,7 @@
  * Plugin Name: LOTRO Death Tracker API
  * Plugin URI: https://dodaswelt.de
  * Description: Provides API endpoints for LOTRO death tracking and StreamElements integration
- * Version: 2.0.0
+ * Version: 2.0
  * Author: DodasWelt
  * Author URI: https://dodaswelt.de
  * License: GPL v2 or later
@@ -18,7 +18,7 @@ class LOTRO_Death_Tracker {
     private $table_deaths;
     private $table_characters;
     private $table_mapping;
-    private $db_version = '2.0.3';
+    private $db_version = '2.0';
 
     public function __construct() {
         global $wpdb;
