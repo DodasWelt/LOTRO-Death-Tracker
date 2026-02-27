@@ -1,7 +1,7 @@
 // LOTRO Death & Level Tracker - Client Component v2.0
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 2.0.0
+// Version: 2.0
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,7 +13,7 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '2.0.0',
+    version: '2.0',
     autoRestart: true,
     logFile: path.join(__dirname, 'client.log')
 };
@@ -27,9 +27,30 @@ function getLOTROPath() {
     if (process.env.LOTRO_PATH) {
         return process.env.LOTRO_PATH;
     }
-    
-    const userProfile = os.homedir();
-    return path.join(userProfile, 'Documents', 'The Lord of the Rings Online');
+
+    const { execSync } = require('child_process');
+    const fsSync = require('fs');
+    const LOTRO_SUBDIR = 'The Lord of the Rings Online';
+
+    // Schritt 1: Registry-Abfrage (zuverlaessigste Quelle - liefert echten Dokumente-Pfad)
+    try {
+        const output = execSync(
+            'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders" /v Personal',
+            { windowsHide: true, encoding: 'utf8' }
+        );
+        const match = output.match(/Personal\s+REG_SZ\s+(.+)/);
+        if (match) {
+            const candidate = path.join(match[1].trim(), LOTRO_SUBDIR);
+            if (fsSync.existsSync(candidate)) return candidate;
+        }
+    } catch (_) {}
+
+    // Schritt 2: OneDrive-Variante
+    const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Documents', LOTRO_SUBDIR);
+    if (fsSync.existsSync(oneDrivePath)) return oneDrivePath;
+
+    // Schritt 3: Standard-Pfad als Fallback
+    return path.join(os.homedir(), 'Documents', LOTRO_SUBDIR);
 }
 
 // Logging function

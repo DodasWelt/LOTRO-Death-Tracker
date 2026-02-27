@@ -46,26 +46,57 @@ if %errorLevel% neq 0 (
 echo OK - Node.js gefunden
 echo.
 
-echo [SCHRITT 2/5] Pruefe LOTRO Installation...
+echo [SCHRITT 2/5] Suche LOTRO Installation...
 echo ----------------------------------------------------------------
 
-REM Pruefe ob Dokumente-Ordner existiert
-set "LOTRO_DOCS=C:\Users\%USERNAME%\Documents\The Lord of the Rings Online"
+REM Schritt 1: Registry-Abfrage (zuverlaessigste Quelle - liefert echten Dokumente-Pfad)
+set "LOTRO_PATH="
+set "DOCS_PATH="
+FOR /F "tokens=2*" %%A IN (
+  'REG QUERY "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Personal 2^>nul'
+) DO SET "DOCS_PATH=%%B"
 
-if exist "%LOTRO_DOCS%" (
-    echo OK - LOTRO-Ordner gefunden: %LOTRO_DOCS%
-) else (
-    echo [WARNUNG] LOTRO-Ordner nicht gefunden.
-    echo Der Ordner wird beim ersten LOTRO-Start erstellt.
-    echo Installation wird trotzdem fortgesetzt...
+IF DEFINED DOCS_PATH (
+  IF EXIST "%DOCS_PATH%\The Lord of the Rings Online" (
+    SET "LOTRO_PATH=%DOCS_PATH%\The Lord of the Rings Online"
+    GOTO :lotro_found
+  )
 )
+
+REM Schritt 2: OneDrive-Variante
+IF EXIST "%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online" (
+  SET "LOTRO_PATH=%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online"
+  GOTO :lotro_found
+)
+
+REM Schritt 3: Standard-Pfad als Fallback
+IF EXIST "%USERPROFILE%\Documents\The Lord of the Rings Online" (
+  SET "LOTRO_PATH=%USERPROFILE%\Documents\The Lord of the Rings Online"
+  GOTO :lotro_found
+)
+
+REM Schritt 4: Nicht gefunden - manuelle Eingabe
+echo.
+echo [WARNUNG] Das Verzeichnis "The Lord of the Rings Online" wurde nicht gefunden.
+echo Bitte gib den vollstaendigen Pfad manuell ein, z.B.:
+echo   C:\Users\Dein_Name\Documents\The Lord of the Rings Online
+echo (Oder Enter druecken - der Ordner wird beim ersten LOTRO-Start automatisch erstellt)
+echo.
+SET /P "LOTRO_PATH=Pfad (oder Enter fuer Standard): "
+IF "%LOTRO_PATH%"=="" (
+  SET "LOTRO_PATH=%USERPROFILE%\Documents\The Lord of the Rings Online"
+  echo INFO - Verwende Standard-Pfad.
+)
+
+:lotro_found
+echo OK - LOTRO-Pfad: %LOTRO_PATH%
 echo.
 
 echo [SCHRITT 3/5] Installiere LOTRO Plugin...
 echo ----------------------------------------------------------------
 
-REM Plugin geht in Documents\The Lord of the Rings Online\Plugins
-set "PLUGINS_PATH=C:\Users\%USERNAME%\Documents\The Lord of the Rings Online\Plugins"
+REM Plugin-Pfad aus erkanntem LOTRO-Pfad ableiten
+set "PLUGINS_PATH=%LOTRO_PATH%\Plugins"
 
 if not exist "%PLUGINS_PATH%" (
     echo [INFO] Plugins-Ordner nicht gefunden: %PLUGINS_PATH%

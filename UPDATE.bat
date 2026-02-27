@@ -88,8 +88,30 @@ echo [SCHRITT 4/5] Aktualisiere LOTRO Plugin...
 echo ----------------------------------------------------------------
 cd /d "%~dp0"
 
-REM LOTRO-Pfad ermitteln (Standard-Pfad)
-set "PLUGINS_PATH=C:\Users\%USERNAME%\Documents\The Lord of the Rings Online\Plugins"
+REM LOTRO-Pfad ermitteln (Registry → OneDrive → Standard → Manuell)
+set "LOTRO_PATH="
+set "DOCS_PATH="
+FOR /F "tokens=2*" %%A IN (
+  'REG QUERY "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Personal 2^>nul'
+) DO SET "DOCS_PATH=%%B"
+
+IF DEFINED DOCS_PATH (
+  IF EXIST "%DOCS_PATH%\The Lord of the Rings Online" (
+    SET "LOTRO_PATH=%DOCS_PATH%\The Lord of the Rings Online"
+    GOTO :update_lotro_found
+  )
+)
+IF EXIST "%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online" (
+  SET "LOTRO_PATH=%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online"
+  GOTO :update_lotro_found
+)
+IF EXIST "%USERPROFILE%\Documents\The Lord of the Rings Online" (
+  SET "LOTRO_PATH=%USERPROFILE%\Documents\The Lord of the Rings Online"
+  GOTO :update_lotro_found
+)
+
+:update_lotro_found
+set "PLUGINS_PATH=%LOTRO_PATH%\Plugins"
 
 if not exist "%PLUGINS_PATH%\DodasWelt" (
     echo [WARNUNG] Plugin-Ordner nicht gefunden: %PLUGINS_PATH%\DodasWelt
