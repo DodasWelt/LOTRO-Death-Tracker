@@ -19,11 +19,15 @@ const SHORTCUT_PATH = path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 function createWatcherScript() {
     const watcherContent = `// LOTRO Watcher - Startet Client nur wenn LOTRO läuft
 const { exec, spawn } = require('child_process');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
 const CLIENT_PATH = '${CLIENT_PATH.replace(/\\/g, '\\\\')}';
-const LOG_PATH = path.join(__dirname, 'watcher.log');
+const LOG_PATH    = path.join(__dirname, 'watcher.log');
+const GITHUB_REPO = 'DodasWelt/LOTRO-Death-Tracker';
+const VERSION_FILE = path.join(__dirname, 'version.json');
+const UPDATER_PATH = path.join(__dirname, 'updater.js');
 
 let clientProcess = null;
 let checkInterval = null;
@@ -35,6 +39,152 @@ function log(message) {
         fs.appendFileSync(LOG_PATH, logMessage, 'utf8');
     } catch (e) {}
 }
+
+// ── Auto-Update ────────────────────────────────────────────────────────────
+
+function getCurrentVersion() {
+    try { return JSON.parse(fs.readFileSync(VERSION_FILE, 'utf8')).version || '0'; }
+    catch (e) { return '0'; }
+}
+
+function compareVersions(a, b) {
+    const pa = String(a).split('.').map(Number);
+    const pb = String(b).split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const d = (pa[i] || 0) - (pb[i] || 0);
+        if (d !== 0) return d;
+    }
+    return 0;
+}
+
+function downloadRaw(rawUrl, destPath, cb) {
+    function get(url, redirects) {
+        if (redirects > 5) { cb(new Error('Zu viele Weiterleitungen')); return; }
+        const tmpPath = destPath + '.tmp';
+        const file = fs.createWriteStream(tmpPath);
+        const req = https.get(url, { headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' } }, function(res) {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+                file.destroy();
+                try { fs.unlinkSync(tmpPath); } catch (_) {}
+                get(res.headers.location, redirects + 1);
+                return;
+            }
+            if (res.statusCode !== 200) {
+                file.destroy();
+                try { fs.unlinkSync(tmpPath); } catch (_) {}
+                cb(new Error('HTTP ' + res.statusCode));
+                return;
+            }
+            res.pipe(file);
+            file.on('finish', function() {
+                file.close(function() {
+                    try {
+                        if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
+                        fs.renameSync(tmpPath, destPath);
+                        cb(null);
+                    } catch (e) {
+                        try { fs.unlinkSync(tmpPath); } catch (_) {}
+                        cb(e);
+                    }
+                });
+            });
+        });
+        req.on('error', function(e) {
+            file.destroy();
+            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            cb(e);
+        });
+        req.setTimeout(30000, function() { req.destroy(); cb(new Error('Timeout')); });
+    }
+    get(rawUrl, 0);
+}
+
+function checkAndApplyUpdate() {
+    const currentVersion = getCurrentVersion();
+    log('Update-Check (installiert: v' + currentVersion + ')...');
+
+    const req = https.request({
+        hostname: 'api.github.com',
+        path: '/repos/' + GITHUB_REPO + '/releases/latest',
+        method: 'GET',
+        headers: {
+            'User-Agent': 'LOTRO-Death-Tracker-Watcher',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+    }, function(res) {
+        let data = '';
+        res.on('data', function(d) { data += d; });
+        res.on('end', function() {
+            if (res.statusCode !== 200) {
+                log('Update-Check: GitHub Status ' + res.statusCode + ' – uebersprungen');
+                return;
+            }
+            let release;
+            try { release = JSON.parse(data); } catch (e) {
+                log('Update-Check: JSON-Fehler – uebersprungen');
+                return;
+            }
+
+            const remoteVersion = (release.tag_name || '').replace(/^v/, '');
+            if (!remoteVersion) return;
+
+            log('Verfuegbare Version: v' + remoteVersion);
+
+            if (compareVersions(remoteVersion, currentVersion) <= 0) {
+                log('Kein Update erforderlich.');
+                return;
+            }
+
+            log('Update auf v' + remoteVersion + ' wird heruntergeladen...');
+            const base = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/';
+
+            const filesToDownload = [
+                { url: base + 'client.js',            dest: path.join(__dirname, 'client.js') },
+                { url: base + 'install-autostart.js', dest: path.join(__dirname, 'install-autostart.js') },
+                { url: base + 'package.json',         dest: path.join(__dirname, 'package.json') },
+                { url: base + 'updater.js',           dest: UPDATER_PATH },
+            ];
+
+            let idx = 0;
+            function downloadNext() {
+                if (idx >= filesToDownload.length) {
+                    // Alle Dateien geladen – Updater spawnen und Watcher beenden
+                    log('Download abgeschlossen – starte Updater...');
+                    const updater = spawn(process.execPath, [UPDATER_PATH, remoteVersion], {
+                        detached: true,
+                        stdio: 'ignore',
+                        windowsHide: true
+                    });
+                    updater.unref();
+
+                    if (clientProcess && !clientProcess.killed) {
+                        try { process.kill(clientProcess.pid); } catch (e) {}
+                    }
+                    if (checkInterval) clearInterval(checkInterval);
+                    log('Watcher beendet sich fuer Update auf v' + remoteVersion + '...');
+                    process.exit(0);
+                    return;
+                }
+                const f = filesToDownload[idx++];
+                log('Lade: ' + f.url.split('/').pop());
+                downloadRaw(f.url, f.dest, function(err) {
+                    if (err) {
+                        log('Download-Fehler (' + f.url.split('/').pop() + '): ' + err.message + ' – Update abgebrochen');
+                        return;
+                    }
+                    downloadNext();
+                });
+            }
+            downloadNext();
+        });
+    });
+
+    req.on('error', function(e) { log('Update-Check: ' + e.message + ' – uebersprungen'); });
+    req.setTimeout(15000, function() { log('Update-Check: Timeout – uebersprungen'); req.destroy(); });
+    req.end();
+}
+
+// ── Ende Auto-Update ───────────────────────────────────────────────────────
 
 function isLOTRORunning(callback) {
     // Prüfe beide Versionen separat (tasklist unterstützt kein OR)
@@ -105,8 +255,11 @@ function checkLOTRO() {
 
 log('=================================');
 log('LOTRO Watcher gestartet');
-log('Überwacht: lotroclient64.exe & lotroclient.exe');
+log('Ueberwacht: lotroclient64.exe & lotroclient.exe');
 log('=================================');
+
+// Update-Check einmalig beim Start (laeuft asynchron im Hintergrund)
+checkAndApplyUpdate();
 
 checkInterval = setInterval(checkLOTRO, 5000);
 checkLOTRO();
