@@ -238,3 +238,13 @@ StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/
 ## WordPress Plugin Auto-Update
 
 Ab v2.0 wird das WP-Plugin über den normalen WordPress-Update-Mechanismus aktualisiert. Technisch: `pre_set_site_transient_update_plugins`-Filter fragt die GitHub Releases API ab und stellt Update-Informationen bereit, wenn Remote-Version > installierte Version. Kein manuelles Reinstallieren nötig.
+
+## lotro-data-fetcher.js — CDN-Einbindung
+
+Ab v2.0 wird `Website/lotro-data-fetcher.js` über jsDelivr ausgeliefert. Einbindung auf `herrin-inge.de`:
+
+```html
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.0/Website/lotro-data-fetcher.js"></script>
+```
+
+Bei einem neuen Release (z. B. `v2.1`) muss nur der Tag in der URL aktualisiert werden (`@v2.0` → `@v2.1`). jsDelivr cached Dateien — nach einem neuen Tag dauert es wenige Minuten bis zur Verfügbarkeit.
