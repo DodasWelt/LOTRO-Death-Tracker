@@ -27,9 +27,11 @@ class LOTRO_Death_Tracker {
         $this->table_mapping    = $wpdb->prefix . 'lotro_streamer_mapping';
 
         register_activation_hook(__FILE__, array($this, 'activate'));
-        add_action('plugins_loaded', array($this, 'maybe_upgrade'));
-        add_action('rest_api_init', array($this, 'register_routes'));
-        add_action('init', array($this, 'add_cors_headers'));
+        add_action('plugins_loaded',                          array($this, 'maybe_upgrade'));
+        add_action('rest_api_init',                           array($this, 'register_routes'));
+        add_action('init',                                    array($this, 'add_cors_headers'));
+        add_filter('pre_set_site_transient_update_plugins',   array($this, 'check_for_update'));
+        add_filter('plugins_api',                             array($this, 'plugin_info'), 20, 3);
     }
 
     // -------------------------------------------------------------------------
@@ -148,6 +150,133 @@ class LOTRO_Death_Tracker {
                 current_level = GREATEST(current_level, VALUES(current_level)),
                 last_seen     = GREATEST(last_seen,     VALUES(last_seen))
         ");
+    }
+
+    // -------------------------------------------------------------------------
+    // Auto-Update via GitHub Releases
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetches the latest release info from GitHub. Result is cached for 12 hours
+     * to stay within GitHub API rate limits (60 unauthenticated requests/hour).
+     * Returns null on error so callers can gracefully skip the update check.
+     */
+    private function get_remote_version_info() {
+        $cached = get_transient('lotro_death_tracker_update_info');
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        $response = wp_remote_get(
+            'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest',
+            array(
+                'headers' => array('User-Agent' => 'LOTRO-Death-Tracker-WP/' . $this->db_version),
+                'timeout' => 10,
+            )
+        );
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            // Cache negative result briefly so a broken API does not hammer GitHub.
+            set_transient('lotro_death_tracker_update_info', null, 6 * HOUR_IN_SECONDS);
+            return null;
+        }
+
+        $release = json_decode(wp_remote_retrieve_body($response));
+        if (empty($release->tag_name)) {
+            set_transient('lotro_death_tracker_update_info', null, 6 * HOUR_IN_SECONDS);
+            return null;
+        }
+
+        $version = ltrim($release->tag_name, 'v'); // "v2.1" → "2.1"
+
+        // Look for a dedicated WP plugin ZIP in the release assets.
+        // The asset must be named "lotro-death-tracker*.zip" and contain the
+        // plugin folder directly (lotro-death-tracker/lotro-death-tracker.php).
+        $download_url = '';
+        if (!empty($release->assets)) {
+            foreach ($release->assets as $asset) {
+                if (strpos($asset->name, 'lotro-death-tracker') !== false &&
+                    substr($asset->name, -4) === '.zip') {
+                    $download_url = $asset->browser_download_url;
+                    break;
+                }
+            }
+        }
+
+        $info = (object) array(
+            'version'      => $version,
+            'url'          => $release->html_url,
+            'download_url' => $download_url,
+            'changelog'    => $release->body ?? '',
+        );
+
+        set_transient('lotro_death_tracker_update_info', $info, 12 * HOUR_IN_SECONDS);
+        return $info;
+    }
+
+    /**
+     * Hooked into pre_set_site_transient_update_plugins.
+     * Injects our plugin into WordPress's update list when a newer version
+     * is available on GitHub.
+     */
+    public function check_for_update($transient) {
+        if (empty($transient->checked)) {
+            return $transient;
+        }
+
+        $remote = $this->get_remote_version_info();
+        if (!$remote || empty($remote->download_url)) {
+            return $transient;
+        }
+
+        $plugin_file    = plugin_basename(__FILE__);
+        $current_version = $transient->checked[$plugin_file] ?? '0';
+
+        if (version_compare($remote->version, $current_version, '>')) {
+            $transient->response[$plugin_file] = (object) array(
+                'slug'         => 'lotro-death-tracker',
+                'plugin'       => $plugin_file,
+                'new_version'  => $remote->version,
+                'url'          => $remote->url,
+                'package'      => $remote->download_url,
+                'requires'     => '5.0',
+                'tested'       => '6.7',
+                'requires_php' => '7.4',
+            );
+        }
+
+        return $transient;
+    }
+
+    /**
+     * Hooked into plugins_api.
+     * Provides plugin details shown on the "View version details" popup in WP admin.
+     */
+    public function plugin_info($res, $action, $args) {
+        if ($action !== 'plugin_information' || ($args->slug ?? '') !== 'lotro-death-tracker') {
+            return $res;
+        }
+
+        $remote = $this->get_remote_version_info();
+        if (!$remote) {
+            return $res;
+        }
+
+        return (object) array(
+            'name'          => 'LOTRO Death Tracker API',
+            'slug'          => 'lotro-death-tracker',
+            'version'       => $remote->version,
+            'author'        => '<a href="https://dodaswelt.de">DodasWelt</a>',
+            'homepage'      => 'https://github.com/DodasWelt/LOTRO-Death-Tracker',
+            'requires'      => '5.0',
+            'tested'        => '6.7',
+            'requires_php'  => '7.4',
+            'download_link' => $remote->download_url,
+            'sections'      => array(
+                'description' => 'REST API Plugin für LOTRO Death Tracking und StreamElements Integration.',
+                'changelog'   => nl2br(esc_html($remote->changelog)),
+            ),
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -574,7 +703,7 @@ class LOTRO_Death_Tracker {
         return rest_ensure_response(array(
             'success'        => true,
             'status'         => 'online',
-            'version'        => '2.0.1',
+            'version'        => '2.0',
             'queueLength'    => $queue_count,
             'totalDeaths'    => $total_deaths,
             'characters'     => $character_count,
