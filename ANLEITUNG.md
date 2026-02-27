@@ -123,5 +123,40 @@ https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH
 Die Auflösung ist 1920 (Breite) x 1080 (Höhe)
 
 
+---
+
+## 🔄 Update von Version 1.5 auf 2.0
+
+Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.0 aktualisieren?
+
+#### **Schritt 1: Update-Paket entpacken**
+1. Das neue ZIP entpacken
+2. In den entpackten Ordner gehen
+
+#### **Schritt 2: Update starten**
+1. **Rechtsklick** auf `UPDATE.bat`
+2. Wähle: **Als Administrator ausführen** ⚠️
+
+Der Updater macht automatisch:
+```
+[1/5] Alten Autostart stoppen
+[2/5] Client-Dateien aktualisieren
+[3/5] Node.js Pakete aktualisieren
+[4/5] LOTRO Plugin aktualisieren
+[5/5] Autostart neu konfigurieren
+```
+
+#### **Schritt 3: Windows neu starten**
+Damit der neue Autostart aktiv wird, bitte Windows neu starten oder Abmelden → Anmelden.
+
+#### **Falls LOTRO während des Updates lief:**
+Im Spiel eingeben:
+```
+/plugins unload DodasWelt.DeathTracker
+/plugins load DodasWelt.DeathTracker
+```
+
+---
+
 ## ❓Bei Fragen oder es funktioniert etwas nicht ##
 Melde dich via Discord bei Doda

@@ -122,6 +122,7 @@ REM Kopiere Client-Dateien einzeln
 copy /Y "Client\client.js" "%CLIENT_PATH%\" >nul
 copy /Y "Client\package.json" "%CLIENT_PATH%\" >nul
 copy /Y "Client\install-autostart.js" "%CLIENT_PATH%\" >nul
+copy /Y "Client\version.json.template" "%CLIENT_PATH%\version.json" >nul
 
 REM Installiere npm dependencies
 cd /d "%CLIENT_PATH%"
