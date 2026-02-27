@@ -1,0 +1,33 @@
+# Distributions-ZIPs (zu groß, enthalten Node.js-Installer)
+*.zip
+
+# Windows-Sicherheitszonen-Metadaten (WSL-Artefakte, Dateiname enthält Doppelpunkt)
+*.Zone.Identifier
+*:Zone.Identifier
+
+# Interne Claude-Konfiguration
+.claude/
+
+# Duplikat-Unterordner (alter Importordner)
+lotro-death-tracker/
+
+# Verwaiste Kopie-Datei
+*Kopie*
+
+# Node.js
+node_modules/
+
+# Laufzeit-Logs
+client.log
+watcher.log
+
+# Dynamisch generierte Autostart-Dateien (werden von install-autostart.js erstellt)
+lotro-watcher.js
+start-lotro-watcher.vbs
+
+# Versions-Datei (wird bei Installation erstellt)
+# Nur version.json.template wird versioniert
+version.json
+
+# Veraltete Dokumentation
+LOTRO-Death-Tracker-COMPLETE-SUMMARY.md

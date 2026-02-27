@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOTRO Death Overlay - Minimalist</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            background: transparent;
+            font-family: 'Cinzel', serif;
+        }
+
+        /* ============================================
+           MINIMALIST OVERLAY - NO BACKGROUND
+           ============================================ */
+
+        .death-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+            transition: all 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+            text-align: center;
+        }
+
+        .death-overlay.show {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+
+        /* Logo */
+        .logo {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 30px;
+            animation: logoGlow 2s ease-in-out infinite;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+        }
+
+        @keyframes logoGlow {
+            0%, 100% {
+                filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+            }
+            50% {
+                filter: drop-shadow(0 0 35px rgba(212, 175, 55, 1));
+            }
+        }
+
+        /* Title - GEFALLEN */
+        .title {
+            font-size: 4em;
+            font-weight: 900;
+            color: #d4af37;
+            text-shadow:
+                0 0 30px rgba(212, 175, 55, 0.9),
+                0 0 60px rgba(212, 175, 55, 0.5),
+                3px 3px 8px rgba(0, 0, 0, 0.9);
+            margin-bottom: 25px;
+            letter-spacing: 8px;
+            animation: titlePulse 2s ease-in-out infinite;
+        }
+
+        @keyframes titlePulse {
+            0%, 100% {
+                text-shadow:
+                    0 0 30px rgba(212, 175, 55, 0.9),
+                    0 0 60px rgba(212, 175, 55, 0.5),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+            50% {
+                text-shadow:
+                    0 0 40px rgba(212, 175, 55, 1),
+                    0 0 80px rgba(212, 175, 55, 0.7),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+        }
+
+        /* Character Name */
+        .character-name {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #f5e6d3;
+            text-shadow:
+                0 0 20px rgba(245, 230, 211, 0.6),
+                3px 3px 6px rgba(0, 0, 0, 0.9);
+            margin-bottom: 15px;
+            letter-spacing: 3px;
+        }
+
+        /* Character Level */
+        .character-level {
+            font-size: 1.8em;
+            color: #d4af37;
+            font-weight: 600;
+            text-shadow:
+                0 0 15px rgba(212, 175, 55, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+        }
+
+        /* Death Count */
+        .death-count {
+            font-size: 1.2em;
+            color: #c0a080;
+            font-weight: 400;
+            text-shadow:
+                2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+        }
+
+        /* Entrance animation */
+        @keyframes fadeInScale {
+            from {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Exit animation */
+        @keyframes fadeOutScale {
+            from {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            to {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="death-overlay" id="deathOverlay">
+        <!-- Logo -->
+        <div class="logo">
+            <img src="" id="logoImage" alt="Logo">
+        </div>
+
+        <!-- Title -->
+        <div class="title">GEFALLEN</div>
+
+        <!-- Character Info -->
+        <div class="character-name" id="characterName">...</div>
+        <div class="character-level" id="characterLevel">Level ...</div>
+        <div class="death-count" id="deathCount">... Mal gestorben</div>
+    </div>
+
+    <!-- Audio element – src is set dynamically before each play -->
+    <audio id="deathSound" preload="none"></audio>
+
+    <script>
+        // ============================================
+        // CONFIGURATION - CUSTOMIZE HERE
+        // ============================================
+
+        const CONFIG = {
+            // API URL - Your WordPress site
+            API_URL: 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1',
+
+            // How often to check for new deaths (milliseconds)
+            CHECK_INTERVAL: 3000, // 3 seconds
+
+            // How long to display each death (milliseconds)
+            DISPLAY_DURATION: 10000, // 10 seconds
+
+            // Logo URL
+            LOGO_URL: 'https://herrin-inge.de/logo.png',
+
+            // ============================================
+            // SOUND CONFIGURATION
+            // ============================================
+
+            // Normal death sound (played for every death that is NOT a milestone)
+            SOUND_URL: 'https://www.dodaswelt.de/lotro/Trauerlied_1.mp3',
+
+            // Milestone sounds – one is chosen at random when deathCount % 5 === 0
+            // (5th, 10th, 15th death, etc.)
+            ALERT_SOUND_URLS: [
+                'https://www.dodaswelt.de/lotro/Alert_1.mp3',
+                'https://www.dodaswelt.de/lotro/Alert_2.mp3',
+            ],
+
+            // Volume (0.0 – 1.0)
+            SOUND_VOLUME: 0.7,
+        };
+
+        // ============================================
+        // OVERLAY LOGIC - DO NOT EDIT BELOW
+        // ============================================
+
+        let currentDeath = null;
+        let isDisplaying = false;
+
+        // Initialize logo
+        function initializeLogo() {
+            const logoImage = document.getElementById('logoImage');
+            if (CONFIG.LOGO_URL && CONFIG.LOGO_URL.trim() !== '') {
+                logoImage.src = CONFIG.LOGO_URL;
+                console.log('[LOGO] Logo loaded:', CONFIG.LOGO_URL);
+            } else {
+                console.warn('[LOGO] No logo URL configured');
+            }
+        }
+
+        /**
+         * Play the appropriate sound for a death.
+         * – Milestone deaths (5th, 10th, 15th, …): random Alert_1 or Alert_2
+         * – All other deaths: normal SOUND_URL (Trauerlied)
+         */
+        function playDeathSound(deathCount) {
+            const audio = document.getElementById('deathSound');
+            let soundUrl;
+
+            if (deathCount && deathCount % 5 === 0 && CONFIG.ALERT_SOUND_URLS.length > 0) {
+                // Milestone: pick one of the alert sounds at random
+                const idx = Math.floor(Math.random() * CONFIG.ALERT_SOUND_URLS.length);
+                soundUrl = CONFIG.ALERT_SOUND_URLS[idx];
+                console.log(`[SOUND] Milestone death #${deathCount}! Playing alert: ${soundUrl}`);
+            } else {
+                soundUrl = CONFIG.SOUND_URL;
+                console.log(`[SOUND] Death #${deathCount} – playing: ${soundUrl}`);
+            }
+
+            if (!soundUrl) return;
+
+            audio.src = soundUrl;
+            audio.volume = Math.max(0, Math.min(1, CONFIG.SOUND_VOLUME));
+            audio.currentTime = 0;
+            audio.play().catch(error => {
+                console.error('[SOUND] Failed to play sound:', error);
+            });
+        }
+
+        // Display death overlay
+        function displayDeath(death) {
+            if (isDisplaying) return;
+
+            isDisplaying = true;
+
+            // Update content
+            document.getElementById('characterName').textContent = death.characterName;
+            document.getElementById('characterLevel').textContent = `Level ${death.level}`;
+            document.getElementById('deathCount').textContent = `${death.deathCount} Mal gestorben`;
+
+            // Show overlay
+            const overlay = document.getElementById('deathOverlay');
+            overlay.classList.add('show');
+
+            // Play sound – pass deathCount so milestone logic can decide which file
+            playDeathSound(death.deathCount);
+
+            console.log(`[DISPLAY] Showing death #${death.deathCount} for ${death.characterName} (Level ${death.level})`);
+
+            // Hide after duration, then advance the queue
+            setTimeout(() => {
+                overlay.classList.remove('show');
+
+                setTimeout(() => {
+                    isDisplaying = false;
+                    advanceQueue(death.id);
+                }, 600); // Wait for fade-out animation
+            }, CONFIG.DISPLAY_DURATION);
+        }
+
+        // Fetch current (oldest unprocessed) death from API
+        async function fetchCurrentDeath() {
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/death/current`);
+                const data = await response.json();
+
+                if (data.success && data.data) {
+                    return data.data;
+                }
+                return null;
+            } catch (error) {
+                console.error('[ERROR] Failed to fetch death:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Mark the displayed death as processed and fetch the next one.
+         * If there is a next death in the queue it is displayed automatically.
+         */
+        async function advanceQueue(deathId) {
+            try {
+                const response = await fetch(`${CONFIG.API_URL}/death/next`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: deathId }),
+                });
+
+                const data = await response.json();
+                console.log('[API] Queue advanced:', data);
+
+                // If another death is waiting, show it after a short pause
+                if (data.success && data.data && data.data.id) {
+                    currentDeath = data.data;
+                    setTimeout(() => {
+                        displayDeath(data.data);
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error('[ERROR] Failed to advance queue:', error);
+            }
+        }
+
+        // Main polling loop – only runs when nothing is currently on screen
+        async function checkForDeaths() {
+            if (isDisplaying) return;
+
+            const death = await fetchCurrentDeath();
+
+            if (death && (!currentDeath || currentDeath.id !== death.id)) {
+                currentDeath = death;
+                displayDeath(death);
+            }
+        }
+
+        // Initialize
+        function init() {
+            console.log('[INIT] LOTRO Death Overlay (Minimalist) starting...');
+            console.log('[CONFIG] API URL:', CONFIG.API_URL);
+            console.log('[CONFIG] Check interval:', CONFIG.CHECK_INTERVAL + 'ms');
+            console.log('[CONFIG] Display duration:', CONFIG.DISPLAY_DURATION + 'ms');
+            console.log('[CONFIG] Logo URL:', CONFIG.LOGO_URL);
+            console.log('[CONFIG] Normal sound:', CONFIG.SOUND_URL || 'Not configured');
+            console.log('[CONFIG] Alert sounds:', CONFIG.ALERT_SOUND_URLS);
+            console.log('[CONFIG] Sound Volume:', (CONFIG.SOUND_VOLUME * 100) + '%');
+
+            initializeLogo();
+
+            // Start polling
+            setInterval(checkForDeaths, CONFIG.CHECK_INTERVAL);
+            checkForDeaths(); // Check immediately on load
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

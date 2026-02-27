@@ -1,0 +1,31 @@
+{
+  "name": "lotro-event-tracker-client",
+  "version": "2.0.0",
+  "description": "LOTRO Death & Level Tracker - Client for monitoring and syncing events to Vercel API",
+  "main": "client.js",
+  "scripts": {
+    "start": "node client.js",
+    "install-service": "node install-autostart.js install",
+    "uninstall-service": "node install-autostart.js uninstall",
+    "status": "node install-autostart.js status",
+    "test-service": "node install-autostart.js test"
+  },
+  "keywords": [
+    "lotro",
+    "death",
+    "levelup",
+    "tracker",
+    "client",
+    "vercel"
+  ],
+  "author": "Herrin Inge / DodasWelt",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chokidar": "^3.5.3",
+    "auto-launch": "^5.0.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
