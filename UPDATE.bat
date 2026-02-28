@@ -212,12 +212,40 @@ echo.
 echo [SCHRITT 5/5] Konfiguriere Autostart und starte Watcher...
 echo ----------------------------------------------------------------
 cd /d "%CLIENT_PATH%"
-call "%NODE_CMD%" install-autostart.js install >nul 2>&1
+call "%NODE_CMD%" install-autostart.js install > "%TEMP%\lotro-autostart.log" 2>&1
+if %errorLevel% neq 0 (
+    echo.
+    echo [FEHLER] Watcher konnte nicht gestartet werden!
+    echo.
+    echo Fehler-Details:
+    echo ----------------------------------------------------------------
+    type "%TEMP%\lotro-autostart.log"
+    echo ----------------------------------------------------------------
+    echo.
+    echo Die Update-Dateien wurden kopiert (Schritte 1-4 erfolgreich).
+    echo Bitte Watcher manuell starten in PowerShell (kein Admin):
+    echo.
+    echo   cd C:\LOTRO-Death-Tracker
+    echo   node install-autostart.js install
+    echo.
+    del "%TEMP%\lotro-autostart.log" >nul 2>&1
+    pause
+    exit /b 1
+)
+del "%TEMP%\lotro-autostart.log" >nul 2>&1
+
+REM Kurz warten und pruefen ob Watcher tatsaechlich laeuft
+timeout /t 3 /nobreak >nul
+tasklist /FI "IMAGENAME eq node.exe" /NH 2>nul | find "node.exe" >nul 2>&1
 if %errorLevel% equ 0 (
-    echo OK - Autostart konfiguriert und Watcher gestartet
+    echo OK - Autostart konfiguriert und Watcher laeuft
 ) else (
-    echo [WARNUNG] Autostart-Konfiguration fehlgeschlagen.
-    echo   Bitte manuell ausfuehren: node install-autostart.js install
+    echo.
+    echo [WARNUNG] Watcher scheint nicht zu laufen, obwohl Konfiguration erfolgreich war.
+    echo Bitte manuell starten in PowerShell (kein Admin):
+    echo   cd C:\LOTRO-Death-Tracker
+    echo   node install-autostart.js install
+    echo.
 )
 echo.
 
@@ -243,5 +271,4 @@ echo Bei Fragen: Discord bei Doda
 echo.
 echo ================================================================
 echo.
-echo Druecke eine beliebige Taste zum Beenden...
-pause >nul
+pause
