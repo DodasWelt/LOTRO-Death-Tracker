@@ -1,7 +1,7 @@
--- DeathTracker Plugin for LOTRO v2.0
+-- DeathTracker Plugin for LOTRO v2.1
 -- Detects player death AND level ups, logs to file for stream overlay integration
 -- Author: DodasWelt
--- Version: 2.0
+-- Version: 2.1
 
 import "Turbine";
 import "Turbine.Gameplay";
@@ -13,13 +13,43 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "2.0",
+    version = "2.1",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
     lastLevelWasLogged = false,
     isPlayerDead = false,
     lastKnownLevel = 0,
     currentLocation = "Unknown Location"
+};
+
+-- Race enum mapping: GetRace() returns a numeric value.
+-- Source: LotroCompanion/lotro-data lore/races.xml + in-game verified plugins.
+DeathTracker.RaceNames = {
+    [23]  = "Mensch",
+    [65]  = "Elb",
+    [73]  = "Zwerg",
+    [81]  = "Hobbit",
+    [114] = "Beorninger",
+    [117] = "Hochelb",
+    [120] = "Stark-Axt",
+    [125] = "Fluss-Hobbit",
+};
+
+-- Class enum mapping: GetClass() returns a numeric value.
+-- Source: LotroCompanion/lotro-data lore/classes.xml + in-game verified plugins.
+DeathTracker.ClassNames = {
+    [23]  = "Wächter",
+    [24]  = "Hauptmann",
+    [31]  = "Barde",
+    [40]  = "Schurke",
+    [162] = "Jäger",
+    [172] = "Waffenmeister",
+    [185] = "Kundiger",
+    [193] = "Runenbewahrer",
+    [194] = "Hüter",
+    [214] = "Beorninger",
+    [215] = "Schläger",
+    [216] = "Seefahrer",
 };
 
 -- Try to get current location
@@ -110,7 +140,9 @@ function DeathTracker:LogEvent(eventType)
     -- Get character info
     local characterName = self.player:GetName();
     local characterLevel = self.player:GetLevel();
-    
+    local raceName  = DeathTracker.RaceNames[self.player:GetRace()]   or "Unknown";
+    local className = DeathTracker.ClassNames[self.player:GetClass()] or "Unknown";
+
     -- Location - LOTRO API is very limited and doesn't expose region names
     -- The player would need to manually add a plugin like "Where" or use coordinates
     -- For now we keep it as Unknown Location
@@ -122,14 +154,16 @@ function DeathTracker:LogEvent(eventType)
     
     -- Create event record
     local eventRecord = {
-        characterName = characterName,
-        eventType = eventType,
-        level = characterLevel,
-        timestamp = gameTime,
-        date = formattedDate,
-        time = formattedTime,
-        datetime = formattedDate .. " " .. formattedTime,
-        region = locationName
+        characterName  = characterName,
+        eventType      = eventType,
+        level          = characterLevel,
+        race           = raceName,
+        characterClass = className,
+        timestamp      = gameTime,
+        date           = formattedDate,
+        time           = formattedTime,
+        datetime       = formattedDate .. " " .. formattedTime,
+        region         = locationName
     };
     
     -- Convert to JSON-like format

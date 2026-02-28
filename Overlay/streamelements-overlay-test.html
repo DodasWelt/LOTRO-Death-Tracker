@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<!--
+  LOTRO Death Overlay – TEST MODE
+  Schreibt / liest aus wp_lotro_deaths_test und wp_lotro_characters_test.
+  Kein Streamer-Filter. Kein Sound. Sichtbare TEST-Badge.
+
+  Nutzung:
+    1. Client im Test-Modus starten:
+       SERVER_URL=https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/death node client.js
+    2. Diese Datei im Browser öffnen (Doppelklick) oder als Browser-Source in OBS.
+    3. Im Spiel sterben → Overlay zeigt Test-Event.
+    4. Nach Testende Test-Daten löschen:
+       DELETE https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/clear  (Admin-Auth)
+
+  API-Endpunkte (Test-Tabellen):
+    GET  /test/death/current
+    POST /test/death/next
+    GET  /test/health
+-->
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOTRO Death Overlay – TEST MODE</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.15); /* leicht sichtbar für lokales Testen */
+            font-family: 'Cinzel', serif;
+        }
+
+        /* TEST-MODE-Badge oben links */
+        .test-badge {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 60, 0, 0.85);
+            color: #fff;
+            font-family: monospace;
+            font-size: 18px;
+            font-weight: bold;
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: 2px solid #ff3c00;
+            z-index: 9999;
+            letter-spacing: 2px;
+        }
+
+        /* Status-Zeile unten links */
+        .test-status {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #aaa;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 4px;
+            z-index: 9999;
+        }
+
+        /* ============================================
+           MINIMALIST OVERLAY - NO BACKGROUND
+           ============================================ */
+
+        .death-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+            transition: all 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+            text-align: center;
+        }
+
+        .death-overlay.show {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+
+        /* Logo */
+        .logo {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 30px;
+            animation: logoGlow 2s ease-in-out infinite;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+        }
+
+        @keyframes logoGlow {
+            0%, 100% { filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8)); }
+            50%       { filter: drop-shadow(0 0 35px rgba(212, 175, 55, 1)); }
+        }
+
+        /* Title */
+        .title {
+            font-size: 4em;
+            font-weight: 900;
+            color: #d4af37;
+            text-shadow:
+                0 0 30px rgba(212, 175, 55, 0.9),
+                0 0 60px rgba(212, 175, 55, 0.5),
+                3px 3px 8px rgba(0, 0, 0, 0.9);
+            margin-bottom: 10px;
+            letter-spacing: 8px;
+            animation: titlePulse 2s ease-in-out infinite;
+        }
+
+        /* [TEST] Sub-Label */
+        .title-test-label {
+            font-size: 1em;
+            font-weight: 600;
+            color: #ff3c00;
+            letter-spacing: 4px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px rgba(255, 60, 0, 0.8);
+        }
+
+        @keyframes titlePulse {
+            0%, 100% {
+                text-shadow:
+                    0 0 30px rgba(212, 175, 55, 0.9),
+                    0 0 60px rgba(212, 175, 55, 0.5),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+            50% {
+                text-shadow:
+                    0 0 40px rgba(212, 175, 55, 1),
+                    0 0 80px rgba(212, 175, 55, 0.7),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+        }
+
+        /* Character Name */
+        .character-name {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #f5e6d3;
+            text-shadow:
+                0 0 20px rgba(245, 230, 211, 0.6),
+                3px 3px 6px rgba(0, 0, 0, 0.9);
+            margin-bottom: 15px;
+            letter-spacing: 3px;
+        }
+
+        /* Character Level */
+        .character-level {
+            font-size: 1.8em;
+            color: #d4af37;
+            font-weight: 600;
+            text-shadow:
+                0 0 15px rgba(212, 175, 55, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+        }
+
+        /* Death Count */
+        .death-count {
+            font-size: 1.2em;
+            color: #c0a080;
+            font-weight: 400;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sichtbare Test-Kennzeichnung -->
+    <div class="test-badge">⚠ TEST MODE</div>
+    <div class="test-status" id="testStatus">Initialisiere...</div>
+
+    <div class="death-overlay" id="deathOverlay">
+        <div class="logo">
+            <img src="" id="logoImage" alt="Logo">
+        </div>
+        <div class="title">GEFALLEN</div>
+        <div class="title-test-label">[ TEST ]</div>
+        <div class="character-name" id="characterName">...</div>
+        <div class="character-level" id="characterLevel">Level ...</div>
+        <div class="death-count" id="deathCount">... Mal gestorben</div>
+    </div>
+
+    <script>
+        // ============================================
+        // TEST-OVERLAY KONFIGURATION
+        // Nur den API_URL-Wert anpassen falls nötig.
+        // ============================================
+
+        const CONFIG = {
+            // Basis-URL der WordPress-API (ohne /test am Ende)
+            API_URL: 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1',
+
+            // Polling-Intervall (ms)
+            CHECK_INTERVAL: 3000,
+
+            // Anzeigedauer pro Event (ms) – kürzer als Prod für schnellere Tests
+            DISPLAY_DURATION: 6000,
+
+            // Logo (leer lassen zum Deaktivieren)
+            LOGO_URL: 'https://herrin-inge.de/logo.png',
+
+            // Kein Sound im Test-Modus (verhindert Verwirrung)
+            SOUND_ENABLED: false,
+        };
+
+        // ============================================
+        // TEST-OVERLAY LOGIK
+        // ============================================
+
+        // Test-Endpunkte (schreiben/lesen aus _test-Tabellen)
+        const TEST_BASE = CONFIG.API_URL + '/test';
+
+        let currentDeath = null;
+        let isDisplaying = false;
+        let pollCount = 0;
+
+        function setStatus(msg) {
+            document.getElementById('testStatus').textContent = msg;
+        }
+
+        function initializeLogo() {
+            const logoImage = document.getElementById('logoImage');
+            if (CONFIG.LOGO_URL && CONFIG.LOGO_URL.trim() !== '') {
+                logoImage.src = CONFIG.LOGO_URL;
+            }
+        }
+
+        function displayDeath(death) {
+            if (isDisplaying) return;
+            isDisplaying = true;
+
+            document.getElementById('characterName').textContent = death.characterName;
+            document.getElementById('characterLevel').textContent = `Level ${death.level}`;
+            document.getElementById('deathCount').textContent = `${death.deathCount} Mal gestorben`;
+
+            const overlay = document.getElementById('deathOverlay');
+            overlay.classList.add('show');
+
+            setStatus(`Zeige: ${death.characterName} – Tod #${death.deathCount} (ID ${death.id})`);
+            console.log('[TEST] Anzeige:', death);
+
+            setTimeout(() => {
+                overlay.classList.remove('show');
+                setTimeout(() => {
+                    isDisplaying = false;
+                    advanceQueue(death.id);
+                }, 600);
+            }, CONFIG.DISPLAY_DURATION);
+        }
+
+        async function fetchCurrentDeath() {
+            try {
+                const response = await fetch(`${TEST_BASE}/death/current`);
+                const data = await response.json();
+                if (data.success && data.data) {
+                    return data.data;
+                }
+                return null;
+            } catch (error) {
+                console.error('[TEST] Fetch-Fehler:', error);
+                setStatus('Fehler beim Abrufen – Server erreichbar?');
+                return null;
+            }
+        }
+
+        async function advanceQueue(deathId) {
+            try {
+                const response = await fetch(`${TEST_BASE}/death/next`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: deathId }),
+                });
+                const data = await response.json();
+                console.log('[TEST] Queue weitergeschaltet:', data);
+
+                if (data.success && data.data && data.data.id) {
+                    currentDeath = data.data;
+                    setTimeout(() => { displayDeath(data.data); }, 1500);
+                } else {
+                    currentDeath = null;
+                    setStatus('Warte auf Test-Events...');
+                }
+            } catch (error) {
+                console.error('[TEST] Advance-Fehler:', error);
+            }
+        }
+
+        async function checkForDeaths() {
+            if (isDisplaying) return;
+
+            pollCount++;
+            if (pollCount % 10 === 0) {
+                // Alle ~30s Status aktualisieren
+                setStatus(`Warte auf Test-Events... (Poll #${pollCount})`);
+            }
+
+            const death = await fetchCurrentDeath();
+            if (!death) return;
+
+            // Kein Streamer-Filter im Test-Modus: alle Events werden angezeigt
+            if (!currentDeath || currentDeath.id !== death.id) {
+                currentDeath = death;
+                displayDeath(death);
+            }
+        }
+
+        async function checkTestHealth() {
+            try {
+                const response = await fetch(`${TEST_BASE}/health`);
+                const data = await response.json();
+                if (data.success) {
+                    setStatus(`Test-API erreichbar. Queue: ${data.queueLength ?? 0}, Deaths: ${data.totalDeaths ?? 0}`);
+                    console.log('[TEST] Health:', data);
+                } else {
+                    setStatus('Test-API: unerwartete Antwort');
+                }
+            } catch (error) {
+                setStatus('Test-API nicht erreichbar – dodaswelt.de online?');
+                console.error('[TEST] Health-Check fehlgeschlagen:', error);
+            }
+        }
+
+        async function init() {
+            console.log('[TEST] LOTRO Death Overlay (TEST MODE) gestartet');
+            console.log('[TEST] API-Basis:', TEST_BASE);
+            console.log('[TEST] Kein Streamer-Filter, kein Sound');
+
+            initializeLogo();
+
+            await checkTestHealth();
+
+            setInterval(checkForDeaths, CONFIG.CHECK_INTERVAL);
+            checkForDeaths();
+        }
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

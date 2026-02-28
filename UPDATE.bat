@@ -1,5 +1,5 @@
 @echo off
-title LOTRO Death Tracker - Update auf v2.0
+title LOTRO Death Tracker - Update auf v2.1
 
 REM Wechsle in das Verzeichnis wo die BAT-Datei liegt
 cd /d "%~dp0"
@@ -7,7 +7,7 @@ cd /d "%~dp0"
 echo.
 echo ================================================================
 echo.
-echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.0
+echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.1
 echo.
 echo ================================================================
 echo.
@@ -44,7 +44,7 @@ if not exist "%CLIENT_PATH%\" (
 echo OK - Bestehende Installation gefunden: %CLIENT_PATH%
 echo.
 
-echo [SCHRITT 1/5] Stoppe alten Autostart...
+echo [SCHRITT 1/5] Stoppe Watcher und Client...
 echo ----------------------------------------------------------------
 set "STARTUP_VBS=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs"
 if exist "%STARTUP_VBS%" (
@@ -53,21 +53,27 @@ if exist "%STARTUP_VBS%" (
 ) else (
     echo INFO - Kein alter Autostart-Eintrag gefunden (OK)
 )
+
+REM Alle laufenden Node.js-Prozesse beenden (Watcher + Client).
+REM Hinweis: Betrifft ALLE node.exe-Prozesse auf diesem PC.
+echo   - Beende laufende Node.js-Prozesse...
+taskkill /F /IM node.exe /T >nul 2>&1
+REM Kurz warten bis Datei-Handles freigegeben sind
+timeout /t 2 /nobreak >nul
+echo OK - Node.js-Prozesse beendet (oder keiner lief)
 echo.
 
 echo [SCHRITT 2/5] Aktualisiere Client-Dateien...
 echo ----------------------------------------------------------------
 copy /Y "Client\client.js"             "%CLIENT_PATH%\client.js" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] client.js konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\install-autostart.js"  "%CLIENT_PATH%\install-autostart.js" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] install-autostart.js konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\package.json"          "%CLIENT_PATH%\package.json" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] package.json konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\version.json.template" "%CLIENT_PATH%\version.json" >nul
-if %errorLevel% equ 0 (
-    echo OK - Client-Dateien aktualisiert
-) else (
-    echo [FEHLER] Client-Dateien konnten nicht kopiert werden!
-    pause
-    exit /b 1
-)
+if %errorLevel% neq 0 ( echo [FEHLER] version.json konnte nicht kopiert werden! & pause & exit /b 1 )
+echo OK - Client-Dateien aktualisiert
 echo.
 
 echo [SCHRITT 3/5] Aktualisiere Node.js Pakete...
@@ -78,9 +84,9 @@ call npm install --silent --no-progress >nul 2>&1
 if %errorLevel% equ 0 (
     echo OK - Pakete aktualisiert
 ) else (
-    echo [FEHLER] npm install fehlgeschlagen!
-    pause
-    exit /b 1
+    echo [WARNUNG] npm install fehlgeschlagen - bestehende Pakete werden verwendet.
+    echo [WARNUNG] Das Update wird trotzdem fortgesetzt.
+    echo [WARNUNG] Falls Probleme auftreten: npm install manuell in %CLIENT_PATH% ausfuehren.
 )
 echo.
 
@@ -110,6 +116,22 @@ IF EXIST "%USERPROFILE%\Documents\The Lord of the Rings Online" (
   GOTO :update_lotro_found
 )
 
+REM Kein Pfad automatisch gefunden – manuelle Eingabe anfordern
+ECHO [WARNUNG] LOTRO-Verzeichnis wurde nicht automatisch gefunden.
+ECHO Bitte gib den Pfad manuell ein, z.B.:
+ECHO   C:\Users\DeinName\Documents\The Lord of the Rings Online
+ECHO (oder Enter zum Ueberspringen des Plugin-Updates)
+ECHO.
+SET /P "LOTRO_PATH=LOTRO-Pfad: "
+IF "%LOTRO_PATH%"=="" (
+    ECHO INFO - Plugin-Update uebersprungen.
+    GOTO :plugin_skipped
+)
+IF NOT EXIST "%LOTRO_PATH%" (
+    ECHO [FEHLER] Pfad existiert nicht - Plugin-Update wird uebersprungen.
+    GOTO :plugin_skipped
+)
+
 :update_lotro_found
 set "PLUGINS_PATH=%LOTRO_PATH%\Plugins"
 
@@ -132,13 +154,19 @@ if not exist "%PLUGINS_PATH%\DodasWelt" (
 )
 
 copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" "%PLUGINS_PATH%\DodasWelt\" >nul
+if %errorLevel% neq 0 (
+    echo [WARNUNG] DeathTracker.plugin konnte nicht kopiert werden.
+    echo [WARNUNG] Plugin-Update fehlgeschlagen. Manuell kopieren aus: LOTRO-Plugin\DodasWelt\
+    goto :autostart
+)
 if not exist "%PLUGINS_PATH%\DodasWelt\DeathTracker" mkdir "%PLUGINS_PATH%\DodasWelt\DeathTracker"
 copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" "%PLUGINS_PATH%\DodasWelt\DeathTracker\" >nul
-if %errorLevel% equ 0 (
-    echo OK - Plugin aktualisiert in: %PLUGINS_PATH%\DodasWelt
-) else (
+if %errorLevel% neq 0 (
+    echo [WARNUNG] Main.lua konnte nicht kopiert werden.
     echo [WARNUNG] Plugin-Update fehlgeschlagen. Manuell kopieren aus: LOTRO-Plugin\DodasWelt\
+    goto :autostart
 )
+echo OK - Plugin aktualisiert in: %PLUGINS_PATH%\DodasWelt
 goto :autostart
 
 :plugin_skipped
@@ -147,12 +175,12 @@ echo INFO - Plugin-Update uebersprungen.
 :autostart
 echo.
 
-echo [SCHRITT 5/5] Konfiguriere Autostart neu...
+echo [SCHRITT 5/5] Konfiguriere Autostart und starte Watcher...
 echo ----------------------------------------------------------------
 cd /d "%CLIENT_PATH%"
 call node install-autostart.js install >nul 2>&1
 if %errorLevel% equ 0 (
-    echo OK - Autostart konfiguriert
+    echo OK - Autostart konfiguriert und Watcher gestartet
 ) else (
     echo [WARNUNG] Autostart-Konfiguration fehlgeschlagen.
     echo   Bitte manuell ausfuehren: node install-autostart.js install
@@ -163,16 +191,19 @@ echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.0
+echo                  Installierte Version: 2.1
 echo.
 echo ================================================================
 echo.
-echo WICHTIG: Starte Windows neu (oder melde dich ab und wieder an),
-echo damit der neue Autostart aktiv wird.
+echo Der Watcher laeuft bereits im Hintergrund.
+echo Ein Neustart von Windows ist NICHT erforderlich.
 echo.
-echo Falls du LOTRO gerade laeuft:
+echo Falls LOTRO gerade laeuft, Plugin im Spiel neu laden:
 echo   /plugins unload DodasWelt.DeathTracker
 echo   /plugins load DodasWelt.DeathTracker
+echo.
+echo Vergiss nicht, auch das WordPress-Plugin ueber den
+echo WP-Admin-Bereich auf die neue Version zu aktualisieren!
 echo.
 echo Bei Fragen: Discord bei Doda
 echo.

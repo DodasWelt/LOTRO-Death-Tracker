@@ -3,7 +3,7 @@
  * Plugin Name: LOTRO Death Tracker API
  * Plugin URI: https://dodaswelt.de
  * Description: Provides API endpoints for LOTRO death tracking and StreamElements integration
- * Version: 2.0
+ * Version: 2.1
  * Author: DodasWelt
  * Author URI: https://dodaswelt.de
  * License: GPL v2 or later
@@ -18,13 +18,17 @@ class LOTRO_Death_Tracker {
     private $table_deaths;
     private $table_characters;
     private $table_mapping;
-    private $db_version = '2.0';
+    private $table_deaths_test;
+    private $table_characters_test;
+    private $db_version = '2.1';
 
     public function __construct() {
         global $wpdb;
-        $this->table_deaths     = $wpdb->prefix . 'lotro_deaths';
-        $this->table_characters = $wpdb->prefix . 'lotro_characters';
-        $this->table_mapping    = $wpdb->prefix . 'lotro_streamer_mapping';
+        $this->table_deaths           = $wpdb->prefix . 'lotro_deaths';
+        $this->table_characters       = $wpdb->prefix . 'lotro_characters';
+        $this->table_mapping          = $wpdb->prefix . 'lotro_streamer_mapping';
+        $this->table_deaths_test      = $wpdb->prefix . 'lotro_deaths_test';
+        $this->table_characters_test  = $wpdb->prefix . 'lotro_characters_test';
 
         register_activation_hook(__FILE__, array($this, 'activate'));
         add_action('plugins_loaded',                          array($this, 'maybe_upgrade'));
@@ -69,6 +73,8 @@ class LOTRO_Death_Tracker {
             death_time VARCHAR(50) NOT NULL DEFAULT '',
             death_datetime VARCHAR(100) NOT NULL DEFAULT '',
             region VARCHAR(255) DEFAULT 'Unknown Location',
+            race VARCHAR(100) DEFAULT NULL,
+            character_class VARCHAR(100) DEFAULT NULL,
             timestamp BIGINT(20) NOT NULL DEFAULT 0,
             received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             processed TINYINT(1) DEFAULT 0,
@@ -85,6 +91,8 @@ class LOTRO_Death_Tracker {
             character_name VARCHAR(255) NOT NULL,
             current_level INT NOT NULL DEFAULT 0,
             total_deaths INT NOT NULL DEFAULT 0,
+            race VARCHAR(100) DEFAULT NULL,
+            character_class VARCHAR(100) DEFAULT NULL,
             last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY  (id),
             UNIQUE KEY uk_character_name (character_name)
@@ -103,24 +111,40 @@ class LOTRO_Death_Tracker {
             UNIQUE KEY uk_character (character_name)
         ) $charset_collate;";
 
+        // Test tables – same schema, different names (no data migration, no mapping table)
+        $sql_deaths_test = str_replace(
+            array($this->table_deaths, 'INDEX idx_processed', 'INDEX idx_timestamp', 'INDEX idx_character'),
+            array($this->table_deaths_test, 'INDEX idx_t_processed', 'INDEX idx_t_timestamp', 'INDEX idx_t_character'),
+            $sql_deaths
+        );
+        $sql_characters_test = str_replace(
+            $this->table_characters, $this->table_characters_test, $sql_characters
+        );
+
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql_deaths);
         dbDelta($sql_characters);
         dbDelta($sql_mapping);
+        dbDelta($sql_deaths_test);
+        dbDelta($sql_characters_test);
 
         // Safety net: dbDelta sometimes fails to ADD columns to existing tables.
-        // Explicitly add new columns if they are missing.
-        $existing_deaths = $wpdb->get_col("SHOW COLUMNS FROM {$this->table_deaths}");
-        if (!empty($existing_deaths)) {
-            if (!in_array('level', $existing_deaths)) {
-                $wpdb->query("ALTER TABLE {$this->table_deaths} ADD COLUMN `level` INT NOT NULL DEFAULT 0 AFTER `character_name`");
-            }
-            if (!in_array('event_type', $existing_deaths)) {
-                $wpdb->query("ALTER TABLE {$this->table_deaths} ADD COLUMN `event_type` VARCHAR(20) NOT NULL DEFAULT 'death' AFTER `level`");
-            }
-            if (!in_array('death_count', $existing_deaths)) {
-                $wpdb->query("ALTER TABLE {$this->table_deaths} ADD COLUMN `death_count` INT NOT NULL DEFAULT 0 AFTER `event_type`");
-            }
+        // Checks run for both prod and test deaths/characters tables.
+        foreach (array($this->table_deaths, $this->table_deaths_test) as $_tbl) {
+            $cols = $wpdb->get_col("SHOW COLUMNS FROM {$_tbl}");
+            if (empty($cols)) continue;
+            if (!in_array('level', $cols))           { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `level` INT NOT NULL DEFAULT 0 AFTER `character_name`"); }
+            if (!in_array('event_type', $cols))      { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `event_type` VARCHAR(20) NOT NULL DEFAULT 'death' AFTER `level`"); }
+            if (!in_array('death_count', $cols))     { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `death_count` INT NOT NULL DEFAULT 0 AFTER `event_type`"); }
+            if (!in_array('race', $cols))            { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `race` VARCHAR(100) DEFAULT NULL AFTER `region`"); }
+            if (!in_array('character_class', $cols)) { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `character_class` VARCHAR(100) DEFAULT NULL AFTER `race`"); }
+        }
+
+        foreach (array($this->table_characters, $this->table_characters_test) as $_tbl) {
+            $cols = $wpdb->get_col("SHOW COLUMNS FROM {$_tbl}");
+            if (empty($cols)) continue;
+            if (!in_array('race', $cols))            { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `race` VARCHAR(100) DEFAULT NULL AFTER `total_deaths`"); }
+            if (!in_array('character_class', $cols)) { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `character_class` VARCHAR(100) DEFAULT NULL AFTER `race`"); }
         }
 
         $existing_mapping = $wpdb->get_col("SHOW COLUMNS FROM {$this->table_mapping}");
@@ -133,23 +157,28 @@ class LOTRO_Death_Tracker {
             }
         }
 
-        // Migrate existing death records into the characters table so that
-        // total_deaths and level are correct after the upgrade.
-        $wpdb->query("
-            INSERT INTO {$this->table_characters}
-                (character_name, current_level, total_deaths, last_seen)
-            SELECT
-                character_name,
-                COALESCE(MAX(level), 0),
-                COUNT(*),
-                MAX(received_at)
-            FROM {$this->table_deaths}
-            GROUP BY character_name
-            ON DUPLICATE KEY UPDATE
-                total_deaths = GREATEST(total_deaths, VALUES(total_deaths)),
-                current_level = GREATEST(current_level, VALUES(current_level)),
-                last_seen     = GREATEST(last_seen,     VALUES(last_seen))
-        ");
+        // Migrate existing death records into the characters table (einmalig).
+        // A separate option flag ensures this runs exactly once, regardless of
+        // how many times db_version is bumped in the future.
+        $data_migrated = get_option('lotro_death_tracker_data_migration', '0');
+        if ($data_migrated !== '1') {
+            $wpdb->query("
+                INSERT INTO {$this->table_characters}
+                    (character_name, current_level, total_deaths, last_seen)
+                SELECT
+                    character_name,
+                    COALESCE(MAX(level), 0),
+                    COUNT(*),
+                    MAX(received_at)
+                FROM {$this->table_deaths}
+                GROUP BY character_name
+                ON DUPLICATE KEY UPDATE
+                    total_deaths = GREATEST(total_deaths, VALUES(total_deaths)),
+                    current_level = GREATEST(current_level, VALUES(current_level)),
+                    last_seen     = GREATEST(last_seen,     VALUES(last_seen))
+            ");
+            update_option('lotro_death_tracker_data_migration', '1');
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -372,6 +401,40 @@ class LOTRO_Death_Tracker {
             'callback'            => array($this, 'api_delete_mapping'),
             'permission_callback' => array($this, 'check_admin_permission'),
         ));
+
+        // ── Test-Modus: schreibt in _test-Tabellen, liest aus _test-Tabellen ──
+        // Kein Streamer-Filter; kein Mapping. Ideal für End-to-End-Tests ohne
+        // Produktionsdaten zu berühren.
+        register_rest_route($ns, '/test/death', array(
+            'methods'             => 'POST',
+            'callback'            => array($this, 'api_test_submit_event'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route($ns, '/test/death/current', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'api_test_get_current_death'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route($ns, '/test/death/next', array(
+            'methods'             => 'POST',
+            'callback'            => array($this, 'api_test_get_next_death'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route($ns, '/test/queue', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'api_test_get_queue'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route($ns, '/test/health', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'api_test_health_check'),
+            'permission_callback' => '__return_true',
+        ));
+        register_rest_route($ns, '/test/clear', array(
+            'methods'             => 'DELETE',
+            'callback'            => array($this, 'api_test_clear'),
+            'permission_callback' => array($this, 'check_admin_permission'),
+        ));
     }
 
     // -------------------------------------------------------------------------
@@ -382,30 +445,36 @@ class LOTRO_Death_Tracker {
      * Atomically upsert the characters table and return the new total_deaths.
      * Uses INSERT … ON DUPLICATE KEY UPDATE to avoid race conditions.
      */
-    private function upsert_character($character_name, $level, $is_death) {
+    private function upsert_character($character_name, $level, $is_death, $race = '', $character_class = '') {
         global $wpdb;
 
         if ($is_death) {
             $wpdb->query($wpdb->prepare(
                 "INSERT INTO {$this->table_characters}
-                    (character_name, current_level, total_deaths, last_seen)
-                 VALUES (%s, %d, 1, NOW())
+                    (character_name, current_level, total_deaths, race, character_class, last_seen)
+                 VALUES (%s, %d, 1, %s, %s, NOW())
                  ON DUPLICATE KEY UPDATE
-                    total_deaths  = total_deaths + 1,
-                    current_level = %d,
-                    last_seen     = NOW()",
-                $character_name, $level, $level
+                    total_deaths    = total_deaths + 1,
+                    current_level   = %d,
+                    race            = COALESCE(NULLIF(%s, ''), race),
+                    character_class = COALESCE(NULLIF(%s, ''), character_class),
+                    last_seen       = NOW()",
+                $character_name, $level, $race, $character_class,
+                $level, $race, $character_class
             ));
         } else {
             // Level-up only: update level, do not touch death counter
             $wpdb->query($wpdb->prepare(
                 "INSERT INTO {$this->table_characters}
-                    (character_name, current_level, total_deaths, last_seen)
-                 VALUES (%s, %d, 0, NOW())
+                    (character_name, current_level, total_deaths, race, character_class, last_seen)
+                 VALUES (%s, %d, 0, %s, %s, NOW())
                  ON DUPLICATE KEY UPDATE
-                    current_level = %d,
-                    last_seen     = NOW()",
-                $character_name, $level, $level
+                    current_level   = %d,
+                    race            = COALESCE(NULLIF(%s, ''), race),
+                    character_class = COALESCE(NULLIF(%s, ''), character_class),
+                    last_seen       = NOW()",
+                $character_name, $level, $race, $character_class,
+                $level, $race, $character_class
             ));
         }
 
@@ -420,14 +489,16 @@ class LOTRO_Death_Tracker {
      */
     private function format_death(array $row) {
         return array(
-            'id'            => intval($row['id']),
-            'characterName' => $row['character_name'],
-            'level'         => intval($row['level']),
-            'deathCount'    => intval($row['death_count']),
-            'date'          => $row['death_date'],
-            'time'          => $row['death_time'],
-            'datetime'      => $row['death_datetime'],
-            'region'        => $row['region'],
+            'id'             => intval($row['id']),
+            'characterName'  => $row['character_name'],
+            'level'          => intval($row['level']),
+            'deathCount'     => intval($row['death_count']),
+            'date'           => $row['death_date'],
+            'time'           => $row['death_time'],
+            'datetime'       => $row['death_datetime'],
+            'region'         => $row['region'],
+            'race'           => $row['race'] ?? null,
+            'characterClass' => $row['character_class'] ?? null,
         );
     }
 
@@ -450,13 +521,15 @@ class LOTRO_Death_Tracker {
             return new WP_Error('missing_fields', 'Required field: characterName', array('status' => 400));
         }
 
-        $character_name = sanitize_text_field($params['characterName']);
-        $event_type     = sanitize_text_field($params['eventType'] ?? 'death');
-        $level          = intval($params['level'] ?? 0);
+        $character_name  = sanitize_text_field($params['characterName']);
+        $event_type      = sanitize_text_field($params['eventType'] ?? 'death');
+        $level           = intval($params['level'] ?? 0);
+        $race            = sanitize_text_field($params['race'] ?? '');
+        $character_class = sanitize_text_field($params['characterClass'] ?? '');
 
         // ── Level-up: update character level, do not touch the death queue ──
         if ($event_type === 'levelup') {
-            $this->upsert_character($character_name, $level, false);
+            $this->upsert_character($character_name, $level, false, $race, $character_class);
             return rest_ensure_response(array(
                 'success'       => true,
                 'message'       => 'Level updated',
@@ -477,18 +550,20 @@ class LOTRO_Death_Tracker {
         $result = $wpdb->insert(
             $this->table_deaths,
             array(
-                'character_name' => $character_name,
-                'level'          => $level,
-                'event_type'     => 'death',
-                'death_count'    => $death_count,
-                'death_date'     => sanitize_text_field($params['date'] ?? ''),
-                'death_time'     => sanitize_text_field($params['time'] ?? ''),
-                'death_datetime' => sanitize_text_field($params['datetime'] ?? current_time('mysql')),
-                'region'         => sanitize_text_field($params['region'] ?? 'Unknown Location'),
-                'timestamp'      => intval($params['timestamp'] ?? time()),
-                'processed'      => 0,
+                'character_name'  => $character_name,
+                'level'           => $level,
+                'event_type'      => 'death',
+                'death_count'     => $death_count,
+                'death_date'      => sanitize_text_field($params['date'] ?? ''),
+                'death_time'      => sanitize_text_field($params['time'] ?? ''),
+                'death_datetime'  => sanitize_text_field($params['datetime'] ?? current_time('mysql')),
+                'region'          => sanitize_text_field($params['region'] ?? 'Unknown Location'),
+                'race'            => $race,
+                'character_class' => $character_class,
+                'timestamp'       => intval($params['timestamp'] ?? time()),
+                'processed'       => 0,
             ),
-            array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%d', '%d')
+            array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d')
         );
 
         if ($result === false) {
@@ -496,7 +571,7 @@ class LOTRO_Death_Tracker {
         }
 
         // INSERT succeeded → now safely update the character stats
-        $this->upsert_character($character_name, $level, true);
+        $this->upsert_character($character_name, $level, true, $race, $character_class);
 
         $queue_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0");
 
@@ -676,10 +751,12 @@ class LOTRO_Death_Tracker {
 
         $characters = array_map(function($row) {
             return array(
-                'characterName' => $row['character_name'],
-                'currentLevel'  => intval($row['current_level']),
-                'totalDeaths'   => intval($row['total_deaths']),
-                'lastSeen'      => $row['last_seen'],
+                'characterName'  => $row['character_name'],
+                'currentLevel'   => intval($row['current_level']),
+                'totalDeaths'    => intval($row['total_deaths']),
+                'race'           => $row['race'] ?? null,
+                'characterClass' => $row['character_class'] ?? null,
+                'lastSeen'       => $row['last_seen'],
             );
         }, $rows);
 
@@ -703,13 +780,69 @@ class LOTRO_Death_Tracker {
         return rest_ensure_response(array(
             'success'        => true,
             'status'         => 'online',
-            'version'        => '2.0',
+            'version'        => '2.1',
             'queueLength'    => $queue_count,
             'totalDeaths'    => $total_deaths,
             'characters'     => $character_count,
             'timestamp'      => current_time('mysql'),
         ));
     }
+    // -------------------------------------------------------------------------
+    // Test-Modus: Wrapper + Handler
+    // -------------------------------------------------------------------------
+
+    /**
+     * Temporarily swaps prod table properties with test table names for the
+     * duration of $fn(), then restores them. PHP is single-threaded per request,
+     * so this is safe – no other request can see the temporary state.
+     */
+    private function with_test_tables(callable $fn) {
+        $d = $this->table_deaths;
+        $c = $this->table_characters;
+        $this->table_deaths     = $this->table_deaths_test;
+        $this->table_characters = $this->table_characters_test;
+        $result = $fn();
+        $this->table_deaths     = $d;
+        $this->table_characters = $c;
+        return $result;
+    }
+
+    public function api_test_submit_event($request) {
+        return $this->with_test_tables(fn() => $this->api_submit_event($request));
+    }
+
+    public function api_test_get_current_death($request) {
+        return $this->with_test_tables(fn() => $this->api_get_current_death($request));
+    }
+
+    public function api_test_get_next_death($request) {
+        return $this->with_test_tables(fn() => $this->api_get_next_death($request));
+    }
+
+    public function api_test_get_queue($request) {
+        return $this->with_test_tables(fn() => $this->api_get_queue($request));
+    }
+
+    public function api_test_health_check($request) {
+        return $this->with_test_tables(fn() => $this->api_health_check($request));
+    }
+
+    /**
+     * DELETE /test/clear  [Admin-Auth]
+     * Leert beide Test-Tabellen vollständig. Produktionsdaten bleiben unangetastet.
+     * Aufzurufen nach Abschluss eines Testlaufs.
+     */
+    public function api_test_clear($request) {
+        global $wpdb;
+        $wpdb->query("TRUNCATE TABLE {$this->table_deaths_test}");
+        $wpdb->query("TRUNCATE TABLE {$this->table_characters_test}");
+        return rest_ensure_response(array(
+            'success' => true,
+            'message' => 'Test-Tabellen geleert.',
+            'tables'  => array($this->table_deaths_test, $this->table_characters_test),
+        ));
+    }
+
     // -------------------------------------------------------------------------
     // Streamer mapping
     // -------------------------------------------------------------------------

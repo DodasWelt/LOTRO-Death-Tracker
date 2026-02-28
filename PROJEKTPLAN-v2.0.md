@@ -469,25 +469,218 @@ Wenn ein Feature (z. B. Thema 3: Race/Class) eine DB-Migration erfordert:
 
 ---
 
+---
+
+## Thema 9 — Risikominimierung vor Veröffentlichung
+
+**Ziel:** Alle in `RISIKOANALYSE-v2.0.md` identifizierten Risiken durch bessere Implementierung auf ein Minimum reduzieren — ohne aufwändige manuelle Tests. Release von v2.0/v2.1 erst nach Abschluss dieses Themas.
+
+### Risiko 1 & 3: Auto-Update — Robusteres Download- und Rollback-Design
+
+**Problem:** Dateien werden sequenziell überschrieben. Ein Abbruch nach der zweiten Datei hinterlässt einen inkonsistenten Zustand. Kein Rollback.
+
+**Best Practice: Alles-oder-nichts per Staging-Verzeichnis**
+
+Statt jede Datei direkt zu überschreiben, werden alle Dateien zunächst in ein temporäres Unterverzeichnis (`update-staging/`) geladen. Erst wenn alle Downloads erfolgreich waren, werden die Dateien in einem einzigen synchronen Schritt umbenannt:
+
+```js
+// 1. Alle Dateien nach update-staging/ laden (bei Fehler: Verzeichnis löschen, abbrechen)
+// 2. Erst wenn alle da sind: Dateien einzeln umbenennen (fs.renameSync ist atomar)
+// 3. Staging-Verzeichnis löschen
+```
+
+Vorteil: Ein Netzwerkfehler bei Datei 3 lässt die Produktivdateien komplett unangetastet. Das Staging-Verzeichnis wird beim nächsten Start-Check automatisch aufgeräumt (falls ein vorheriger Versuch abgebrochen wurde).
+
+### Risiko 2: Updater-Timing — Verlässliche Prozess-Synchronisation
+
+**Problem:** Der 3-Sekunden-`setTimeout` im Updater ist willkürlich. Wenn Windows die frisch heruntergeladene `install-autostart.js` noch als gesperrt markiert, scheitert `execSync`.
+
+**Best Practice: Readiness-Check statt blindem Warten**
+
+Statt auf eine feste Wartezeit zu vertrauen, prüft `updater.js` aktiv ob die Datei lesbar ist, bevor er sie ausführt:
+
+```js
+function waitForFile(filePath, maxWaitMs, cb) {
+    const start = Date.now();
+    function check() {
+        try {
+            fs.accessSync(filePath, fs.constants.R_OK);
+            cb(null); // Datei ist lesbar
+        } catch (e) {
+            if (Date.now() - start > maxWaitMs) { cb(e); return; }
+            setTimeout(check, 200);
+        }
+    }
+    check();
+}
+```
+
+Zusätzlich: Die Wartezeit vor `npm install` von 3s auf 1s reduzieren, dafür den `waitForFile`-Check einschalten. Maximal 10 Sekunden warten, dann Fehler loggen.
+
+### Risiko 2 (zusätzlich): Download-URL validieren bevor Update gestartet wird
+
+**Problem:** Die Raw-URL-Konstruktion `https://raw.githubusercontent.com/.../v{version}/Client/` ist ungetestet. Wenn der Tag falsch ist, schlägt der Download still fehl.
+
+**Best Practice: URL-Vorab-Validierung**
+
+Vor dem eigentlichen Download einen HEAD-Request (oder GET auf `version.json`) gegen die konstruierte Base-URL senden. Nur wenn dieser Request 200 zurückgibt, wird das Update fortgesetzt:
+
+```js
+// HEAD-Request auf: base + 'version.json.template'
+// Bei Fehler: Log + Update komplett überspringen (nicht abbrechen)
+```
+
+Das macht die URL-Konstruktion testbar und verhindert dass ein falscher Tag einen Halb-Update auslöst.
+
+### Risiko 4: DB-Migration — Trennnung von Schema-Migration und Datenmigration
+
+**Problem:** Die `INSERT INTO wp_lotro_characters ... SELECT FROM wp_lotro_deaths`-Datenmigration läuft bei jedem `db_version`-Wechsel, auch bei zukünftigen Minor-Releases die keine Datenmigration brauchen.
+
+**Best Practice: Eigene Versions-Option für Datenmigration**
+
+Separate WP-Option `lotro_death_tracker_data_migration` führen, die nur einmalig gesetzt wird:
+
+```php
+$data_migrated = get_option('lotro_death_tracker_data_migration', '0');
+if ($data_migrated !== '1') {
+    // INSERT INTO ... SELECT ... (einmalige Datenmigration)
+    update_option('lotro_death_tracker_data_migration', '1');
+}
+```
+
+So läuft die Datenmigration genau einmal und nie wieder, unabhängig von `$db_version`.
+
+### Risiko 7: UPDATE.bat — Expliziter Fallback wenn LOTRO-Pfad nicht gefunden
+
+**Problem:** Wenn alle drei Pfad-Checks fehlschlagen, läuft die Batch mit leerem `LOTRO_PATH` in `:update_lotro_found`. Die manuelle Eingabe-Aufforderung enthält keinen klaren Hinweis was zu tun ist.
+
+**Best Practice: Expliziter Fallback-Block**
+
+Zwischen dem letzten Pfad-Check und dem Label `:update_lotro_found` einen expliziten Fallback einfügen, der den Nutzer mit einem konkreten Beispiel um Eingabe bittet — und bei leerer Eingabe explizit abbricht statt mit ungültigem Pfad weiterzumachen.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung | Priorität |
+|---|---|---|
+| `install-autostart.js` | Staging-Verzeichnis für Downloads, URL-Vorab-Validierung | **Hoch** |
+| `updater.js` | `waitForFile`-Check statt blindem Timeout | **Hoch** |
+| `lotro-death-tracker.php` | Datenmigration in separate Option auslagern | **Mittel** |
+| `UPDATE.bat` | Expliziter Fallback mit Abbruch statt leerer Eingabe | **Klein** |
+
+**Aufwand: Mittel** — Die Staging-Logik in `install-autostart.js` ist der aufwändigste Teil. Updater und PHP-Änderung sind überschaubar.
+
+**Offene Entscheidungen:**
+- Soll das Staging-Verzeichnis `update-staging/` oder `.update-tmp/` heißen?
+- Soll bei einem fehlgeschlagenen Update der Nutzer eine Benachrichtigung erhalten (z.B. Eintrag in `watcher.log` + Systembenachrichtigung via PowerShell `msg`)?
+
+---
+
+---
+
+## Thema 10 — Test-Umgebung (Staging)
+
+**Ziel:** Vor dem Verteilen eines Updates (v1.5 → v2.1 oder zukünftige Releases) einen vollständigen End-to-End-Test ohne Produktionsdaten ermöglichen. Testdaten landen in separaten Datenbanktabellen und werden nach Testabschluss explizit gelöscht.
+
+### Architektur
+
+```
+Client im Test-Modus
+  SERVER_URL=.../v1/test/death node client.js
+       │
+       ▼
+WordPress API /test/death (neue Test-Endpunkte)
+       │  schreibt in wp_lotro_deaths_test
+       │  schreibt in wp_lotro_characters_test
+       ▼
+Test-Overlay (streamelements-overlay-test.html)
+       │  liest von /test/death/current
+       │  schreibt /test/death/next (als gezeigt markieren)
+       │  kein Streamer-Filter, kein Sound
+       ▼
+Nach Test: DELETE /test/clear → Testtabellen geleert
+```
+
+Produktionsdaten in `wp_lotro_deaths` und `wp_lotro_characters` bleiben **vollständig unangetastet**.
+
+### Neue API-Endpunkte (Test-Modus)
+
+| Endpoint | Methode | Auth | Funktion |
+|---|---|---|---|
+| `/test/death` | POST | — | Tod/Level-Event in Testtabelle eintragen |
+| `/test/death/current` | GET | — | Ältester unverarbeiteter Test-Eintrag |
+| `/test/death/next` | POST | — | Test-Eintrag als gezeigt markieren, nächsten holen |
+| `/test/queue` | GET | — | Test-Queue-Status |
+| `/test/health` | GET | — | Test-API Status + Tabellen-Zähler |
+| `/test/clear` | DELETE | Admin | Beide Testtabellen leeren (`TRUNCATE`) |
+
+### Test-Ablauf (manuell)
+
+```
+1. WordPress-Plugin deployen (enthält neue Test-Endpunkte + Test-Tabellen)
+
+2. Client im Test-Modus starten:
+   SERVER_URL=https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/death node client.js
+
+3. Test-Overlay öffnen (lokal oder in OBS):
+   Overlay/streamelements-overlay-test.html
+
+4. Im Spiel sterben → Client sendet an /test/death → Test-Overlay zeigt Event an
+   → Prüfen: Race/Class korrekt? Overlay-Timing korrekt? Log sauber?
+
+5. UPDATE.bat-Test (v1.5 → v2.1):
+   a. v1.5-Installation simulieren / echte v1.5-Umgebung nutzen
+   b. UPDATE.bat ausführen
+   c. Prüfen: Client-Version in version.json? Watcher korrekt regeneriert?
+   d. Erneut sterben → Daten kommen in Testtabelle an
+
+6. Nach erfolgreichem Test:
+   DELETE https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/clear
+   (mit WordPress Admin-Credentials per Basic Auth oder Application Password)
+
+7. Update freigeben
+```
+
+### Test-Überwachung
+
+```bash
+# Test-Queue prüfen (PowerShell)
+Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/health" -Method GET
+
+# Test-Daten einsehen
+Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/queue" -Method GET
+
+# Testtabellen leeren (Admin-Credentials erforderlich)
+Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/clear" `
+  -Method DELETE `
+  -Headers @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("user:pass")) }
+```
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `lotro-death-tracker.php` | `$table_deaths_test`, `$table_characters_test`; Test-Tabellen in `create_tables()`; Test-Routen in `register_routes()`; `with_test_tables()`; Test-Wrapper-Methoden; `api_test_clear()` |
+| `Overlay/streamelements-overlay-test.html` | Neues Test-Overlay (kein Streamer-Filter, kein Sound, TEST-Badge) |
+| `Client/client.js` | Keine Änderung — `SERVER_URL`-Env-Variable schon vorhanden |
+
+**Aufwand: Mittel** — WP-Plugin-Erweiterung war der Hauptaufwand. Test-Overlay ist eine angepasste Kopie des Prod-Overlays.
+
+---
+
 ## Gesamtübersicht
 
-| # | Thema | Version | Aufwand | Offene Entscheidungen |
+| # | Thema | Version | Aufwand | Status |
 |---|---|---|---|---|
-| 1 | Auto-Update-System (Watcher) | 2.0 | **Groß** | GitHub-Repo anlegen (→ Thema 4 zuerst) |
-| 2 | Pfad-Erkennung bei Installation | 2.0 | **Mittel** | Registry-Abfrage auch in client.js? |
-| 3 | Race/Class im Plugin | 2.1 | **Mittel** | Enum-Tabelle validieren, Overlay-Anzeige? |
-| 4 | GitHub Repository Setup | 2.0 | **Klein** | Öffentlich oder privat? Account? |
-| 5 | WP Plugin Auto-Update | 2.0 | **Mittel** | Update-Check cachen? |
-| 6 | Fetcher-Updates via GitHub | 2.0 | **Minimal** | jsDelivr oder Raw GitHub? |
-| 7 | Updater für v1.5 → v2.0 | 2.0 | **Klein** | — |
-| 8 | Versionierungsstrategie | 2.0 | **Klein** | Übergang von `2.0.3` → neues Schema |
+| 1 | Auto-Update-System (Watcher) | 2.0 | **Groß** | ✅ implementiert |
+| 2 | Pfad-Erkennung bei Installation | 2.0 | **Mittel** | ✅ implementiert |
+| 3 | Race/Class im Plugin | 2.1 | **Mittel** | ✅ implementiert |
+| 4 | GitHub Repository Setup | 2.0 | **Klein** | ✅ implementiert |
+| 5 | WP Plugin Auto-Update | 2.0 | **Mittel** | ✅ implementiert |
+| 6 | Fetcher-Updates via GitHub | 2.0 | **Minimal** | ✅ implementiert |
+| 7 | Updater für v1.5 → v2.0 | 2.0 | **Klein** | ✅ implementiert |
+| 8 | Versionierungsstrategie | 2.0 | **Klein** | ✅ implementiert |
+| 9 | Risikominimierung vor Release | 2.1 | **Mittel** | ✅ implementiert |
+| 10 | Test-Umgebung (Staging) | 2.2 | **Mittel** | ✅ implementiert |
 
-**Empfohlene Implementierungsreihenfolge:** 4 → 8 → 7 → 2 → 6 → 5 → 1 → 3
-
-- **Thema 4** (GitHub) ist Voraussetzung für alles andere — zuerst das Repository anlegen.
-- **Thema 8** (Versionierung) direkt danach — alle Versionsnummern auf Stand bringen.
-- **Thema 7** (Updater) ist unabhängig und klein — sofort nach dem Repo-Setup umsetzbar.
-- **Thema 2** (Pfad-Erkennung) + **Thema 6** (Fetcher CDN) sind ebenfalls unabhängig und schnell.
-- **Thema 5** (WP Auto-Update) benötigt das fertige GitHub-Repo mit korrekten Release-Assets.
-- **Thema 1** (Auto-Update Watcher) ist am aufwändigsten — nach allem anderen angehen.
-- **Thema 3** (Race/Class) ist ein eigenständiges Feature-Release (`v2.1`) — kann parallel entwickelt werden.
+**Release von v2.0/v2.1 ist freigegeben (Thema 9 abgeschlossen).**
+**Thema 10 wird mit dem nächsten Release (v2.2) ausgeliefert.**

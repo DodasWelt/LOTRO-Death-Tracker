@@ -9,6 +9,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — 3-Perspektiven-Risikoanalyse inkl. v1.5→v2.1-Verteilungsrisiken.
 
 ### Repository-Struktur
 
@@ -17,10 +18,11 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Client/` | Node.js Client (Watcher, Installer, Updater) | `C:\LOTRO-Death-Tracker\` auf Streamer-PC |
 | `LOTRO-Plugin/` | Lua Plugin für LOTRO | `Documents\...\Plugins\DodasWelt\` |
 | `WordPress/lotro-death-tracker.php` | WordPress REST API Plugin | `dodaswelt.de` WP-Plugin-Verzeichnis |
-| `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay | StreamElements Custom Widget |
+| `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay (Prod) | StreamElements Custom Widget |
+| `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
 | `INSTALL.bat` | Erstinstallation für Streamer | Im Distributions-ZIP |
-| `UPDATE.bat` | Upgrade v1.5 → v2.0 für bestehende Nutzer | Im Distributions-ZIP |
+| `UPDATE.bat` | Upgrade v1.5 → v2.1 für bestehende Nutzer | Im Distributions-ZIP |
 
 ---
 
@@ -90,7 +92,7 @@ LOTRO (Spiel)
 **Node.js Client**:
 - `Client/client.js` — File-Watcher & API-Sender
 - `Client/install-autostart.js` — Generiert `lotro-watcher.js` + `start-lotro-watcher.vbs` dynamisch, kopiert VBS in Startup-Ordner
-- `Client/updater.js` — Wird vom Watcher nach erkanntem Update gespawnt; führt `npm install` + `install-autostart.js install` aus, schreibt `version.json`, löscht sich selbst
+- `Client/updater.js` — Wird vom Watcher nach erkanntem Update gespawnt; prüft zunächst ob LOTRO läuft (VBScript-Dialog bei Bedarf), wartet 1s, prüft dann per `waitForFile()` ob `install-autostart.js` lesbar ist (max 10s), führt `npm install` + `install-autostart.js install` aus, schreibt `version.json`, löscht sich selbst
 - `Client/version.json.template` — Template für installierte Version (wird bei Installation zu `version.json` kopiert)
 - `Client/package.json`
 - Installationspfad: `C:\LOTRO-Death-Tracker\`
@@ -117,19 +119,32 @@ Watcher startet
   → version.json lesen → vergleichen
   → Kein Update: normal weiter (LOTRO-Check-Loop)
   → Update verfügbar:
-       → client.js, install-autostart.js, package.json, updater.js herunterladen (raw.githubusercontent.com)
+       → HEAD-Request auf version.json.template zur URL-Vorab-Validierung
+       → Bei Fehler: Update abgebrochen, Watcher läuft weiter
+       → update-staging/ anlegen
+       → Alle 4 Dateien nach update-staging/ laden (downloadRaw, je .tmp → rename intern)
+       → Erst wenn ALLE Downloads OK: atomares renameSync in Produktion
+       → update-staging/ löschen
        → updater.js als detached Prozess spawnen (windowsHide: true)
        → Client-Prozess beenden (falls läuft)
        → Watcher beendet sich
          ↓
-  updater.js (wartet 3s):
-       → npm install
-       → node install-autostart.js install (regeneriert Watcher + startet ihn)
-       → version.json aktualisieren
+  updater.js:
+       → isLotroRunning() via tasklist (spawnSync, windowsHide: true)
+       → Falls LOTRO läuft: VBScript-Dialog (windowsHide: false!)
+           "Wurde LOTRO bereits beendet?" Ja → weiter | Nein →
+           "Soll LOTRO jetzt beendet werden?" Ja → taskkill + weiter | Nein →
+           Hinweis-Dialog (OK bestätigen) + process.exit(0)
+       → wartet 1s (Watcher-Prozess komplett beendet)
+       → waitForFile auf install-autostart.js (max 10s)
+       → npm install  (Fehler → errors[])
+       → node install-autostart.js install (Fehler → errors[])
+       → version.json aktualisieren (Fehler → errors[])
+       → Abschluss-Dialog: Erfolg (Info-Icon) ODER Fehlerliste nummeriert + Log-Pfad (Critical-Icon)
        → updater.js löscht sich selbst
 ```
 
-**Randfälle:** Kein Internet / GitHub nicht erreichbar → still überspringen. Download-Fehler → `.tmp`-Datei verwerfen, Original bleibt intakt.
+**Randfälle:** Kein Internet / GitHub nicht erreichbar → still überspringen. URL-Validierung schlägt fehl (Tag existiert nicht) → Update abgebrochen. Download-Fehler → update-staging/ wird bereinigt, Produktionsdateien bleiben komplett unangetastet. Beim nächsten Watcher-Start wird ein altes update-staging/ automatisch aufgeräumt.
 
 ### PluginData Format
 
@@ -138,10 +153,25 @@ Das Plugin speichert via `Turbine.DataScope.Character` eine **Lua-Tabelle** (nic
 {
   ["lastUpdate"] = 1234567890.0,
   ["eventType"] = "death",
-  ["content"] = "{\"characterName\":\"Dodaman\",\"eventType\":\"death\",...}",
-  ["version"] = "2.0",
+  ["content"] = "{\"characterName\":\"Dodaman\",\"eventType\":\"death\",\"race\":\"Hobbit\",\"characterClass\":\"Schurke\",...}",
+  ["version"] = "2.1",
 }
 ```
+
+### Race/Class Enum-Werte (ab v2.1)
+
+`GetRace()` und `GetClass()` liefern numerische Werte. Mapping-Tabellen in `Main.lua`:
+
+| Völker | | Klassen | |
+|--------|---|---------|---|
+| 23 = Mensch | 117 = Hochelb | 23 = Wächter | 185 = Kundiger |
+| 65 = Elb | 120 = Stark-Axt | 24 = Hauptmann | 193 = Runenbewahrer |
+| 73 = Zwerg | 125 = Fluss-Hobbit | 31 = Barde | 194 = Hüter |
+| 81 = Hobbit | | 40 = Schurke | 214 = Beorninger |
+| 114 = Beorninger | | 162 = Jäger | 215 = Schläger |
+| | | 172 = Waffenmeister | 216 = Seefahrer |
+
+Quelle: LotroCompanion/lotro-data (lore/races.xml + lore/classes.xml), **noch nicht live in-game verifiziert** (→ RISIKOANALYSE-v2.0.md P1-A). Falsches Mapping landet still als `"Unknown"` in der DB.
 Das `content`-Feld ist ein escaped JSON-String. Der Client unescaped mit `.replace(/\\"/g, '"')` vor `JSON.parse()`.
 
 ### Duplikat-Schutz
@@ -175,6 +205,16 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 
 9. **WP Plugin ZIP-Struktur** — Das `lotro-death-tracker.zip` Release-Asset muss den Plugin-Ordner direkt enthalten: `lotro-death-tracker/lotro-death-tracker.php`. Nur dann funktioniert der WordPress-Update-Mechanismus korrekt.
 
+10. **`POST /death` hat keinen `data`-Wrapper** — Die GET-Endpoints `/death/current` und `/death/next` antworten mit `{ success, data: {...}, queueLength }`. Der POST-Endpoint `/death` antwortet dagegen direkt mit `{ success, message, queuePosition, deathCount, id }` ohne `data`-Unterobjekt. In `client.js` also `response.data.queuePosition` (nicht `response.data.data.queuePosition`).
+
+11. **`client.js` Auto-Restart** — `CONFIG.autoRestart = true` bewirkt, dass der Client nach einem uncaught Exception nach 5 Sekunden automatisch neu startet. chokidar verwendet `awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 }` — Dateiänderungen werden erst verarbeitet, wenn die Datei 500 ms lang nicht mehr beschrieben wird (verhindert Teillesungen).
+
+12. **`UPDATE.bat` beendet ALLE `node.exe`** — `taskkill /F /IM node.exe /T` in Schritt 1 trifft nicht nur Watcher/Client, sondern jeden Node.js-Prozess auf dem PC. Danach startet `install-autostart.js install` den neuen Watcher sofort — Windows-Neustart ist nicht mehr erforderlich. Beim Modifizieren von UPDATE.bat darauf achten: `taskkill` läuft VOR dem Kopieren der Dateien (damit Datei-Handles freigegeben sind), `timeout /t 2` gibt Windows Zeit zur Aufräumung.
+
+14. **`vbsDialog()` in `updater.js` — `windowsHide: false` ist absichtlich** — Der Updater wird zwar mit `windowsHide: true` gespawnt (läuft unsichtbar), aber `wscript.exe` für VBScript-MsgBox-Dialoge MUSS mit `windowsHide: false` aufgerufen werden. VBScript-Dialoge erscheinen trotzdem sichtbar, auch wenn der Elternprozess versteckt ist. Die temporäre VBS-Datei (`_upd_dlg.vbs`) wird mit `'latin1'`-Encoding geschrieben, damit deutsche Umlaute (Windows-1252) korrekt dargestellt werden. Rückgabewerte: 6=Ja (vbYes), 7=Nein (vbNo), 1=OK.
+
+13. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
+
 ---
 
 ## API Endpoints (dodaswelt.de)
@@ -192,7 +232,12 @@ POST   /wp-json/lotro-deaths/v1/streamers/mapping # Mapping hinzufügen/aktualis
 DELETE /wp-json/lotro-deaths/v1/streamers/mapping # Mapping löschen [Admin-Auth]
 ```
 
-**Response-Format `/death/current` und `/death/next`:**
+**Response-Format `POST /death` (kein `data`-Wrapper!):**
+```json
+{ "success": true, "message": "Death event queued", "queuePosition": 1, "deathCount": 5, "id": 42 }
+```
+
+**Response-Format GET `/death/current` und POST `/death/next` (mit `data`-Wrapper):**
 ```json
 { "success": true, "data": { "id": 1, "characterName": "...", "level": 10, "deathCount": 5, "date": "...", "time": "...", "datetime": "...", "region": "..." }, "queueLength": 2 }
 ```
@@ -203,13 +248,15 @@ DELETE /wp-json/lotro-deaths/v1/streamers/mapping # Mapping löschen [Admin-Auth
 
 ## Datenbankstruktur (WordPress)
 
-- `wp_lotro_deaths` – Death-Queue: Spalten `id, character_name, level, event_type, death_count, death_date, death_time, death_datetime, region, timestamp, received_at, processed, shown_at`
-- `wp_lotro_characters` – Charakter-Statistiken: `character_name, current_level, total_deaths, last_seen`
+- `wp_lotro_deaths` – Death-Queue: Spalten `id, character_name, level, event_type, death_count, death_date, death_time, death_datetime, region, race, character_class, timestamp, received_at, processed, shown_at`
+- `wp_lotro_characters` – Charakter-Statistiken: `character_name, current_level, total_deaths, race, character_class, last_seen`
 - `wp_lotro_streamer_mapping` – Zuordnung: `twitch_username, character_name, display_name, race, character_class` (UNIQUE auf `twitch_username` und `character_name`)
 
-DB-Migration läuft automatisch via `maybe_upgrade()` (`plugins_loaded`-Hook), gesteuert über WP-Option `lotro_death_tracker_db_version` (aktuell `2.0`).
+DB-Migration läuft automatisch via `maybe_upgrade()` (`plugins_loaded`-Hook), gesteuert über WP-Option `lotro_death_tracker_db_version` (aktuell `2.1`).
 
 **Kritisch:** `dbDelta` fügt bei bestehenden Tabellen manchmal keine neuen Spalten hinzu. Deshalb enthält `create_tables()` nach `dbDelta` einen expliziten `SHOW COLUMNS`-Check mit `ALTER TABLE` als Fallback. Bei jeder neuen Spalte **muss** dieser Block erweitert werden. Die DB-Version in `$db_version` muss bei jeder Schema-Änderung erhöht werden, damit `maybe_upgrade()` die Migration erneut ausführt.
+
+**Datenmigration (einmalig):** Das `INSERT INTO wp_lotro_characters … SELECT FROM wp_lotro_deaths` in `create_tables()` läuft nur einmalig, geschützt durch die separate WP-Option `lotro_death_tracker_data_migration` (`'0'` → `'1'`). Diese Option ist unabhängig von `$db_version`, damit zukünftige Schema-Bumps die Migration nicht erneut auslösen.
 
 **Reihenfolge in `api_submit_event`:** Erst `INSERT` in `wp_lotro_deaths`, dann `upsert_character`. Nicht umkehren – sonst wird der Todes-Counter erhöht, auch wenn der Queue-Eintrag fehlschlägt.
 
@@ -231,6 +278,10 @@ Das Overlay zeigt pro Death-Event für `DISPLAY_DURATION` (Standard: 10 Sekunden
 - Charakter-Name
 - `Level N`
 - `N Mal gestorben` ← Todes-Zähler aus `death.deathCount`
+
+**Mapping-Filter:** Beim Start (und alle 5 Minuten) holt das Overlay `/streamers` und baut intern ein `Set` der gemappten Charakternamen auf. Deaths von Charakteren, die **nicht** im Set sind, werden per `skipDeath()` still übersprungen (`/death/next` aufrufen, nicht anzeigen) und der nächste Eintrag sofort geprüft. Ist das Set leer (API nicht erreichbar beim Start), wird kein Filter angewendet (fail-open).
+
+Der Filter greift in **beiden** Pfaden: im regulären Polling-Loop (`checkForDeaths`) und im Queue-Vorschub nach einer Anzeige (`advanceQueue`). Nur so ist sichergestellt, dass auch direkt aufeinanderfolgende Tode korrekt gefiltert werden.
 
 ### lotro-data-fetcher.js (Website-Integration)
 
@@ -293,15 +344,18 @@ StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/
 
 Bei jedem Release alle Versionsnummern synchron halten:
 
-| Datei/Feld | Beispielwert |
+| Datei/Feld | Nächster Release (v2.2) |
 |---|---|
-| PHP Plugin-Header `Version:` | `2.1` |
-| PHP `$db_version` | `'2.1'` (nur bei DB-Änderung erhöhen) |
-| `Client/package.json` `"version"` | `"2.1"` |
-| `Client/version.json.template` | `{ "version": "2.1" }` |
-| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.1` |
-| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.1"` |
-| Git-Tag | `v2.1` |
+| PHP Plugin-Header `Version:` | `2.2` |
+| PHP `$db_version` | `'2.2'` (Test-Tabellen: kein Schema-Change an Prod-Tabellen, ggf. auf `'2.1'` lassen) |
+| `Client/package.json` `"version"` | `"2.2"` |
+| `Client/version.json.template` | `{ "version": "2.2" }` |
+| `Client/client.js` Header-Kommentar | `Version: 2.2` |
+| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.2` |
+| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.2"` |
+| Git-Tag | `v2.2` |
+
+> **Aktueller Stand (unveröffentlicht):** Code-Stand ist v2.2 (Thema 10 Test-Umgebung implementiert). Letzter GitHub-Release: v2.0. v2.1 und v2.2 noch nicht released.
 
 ## WordPress Plugin Auto-Update
 
@@ -314,6 +368,55 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.0/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.1/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.0` → `@v2.1` im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.1` → `@v2.2` (usw.) im Script-Tag aktualisieren.
+
+---
+
+## Test-Umgebung (ab v2.2)
+
+### Zweck
+End-to-End-Tests ohne Produktionsdaten zu berühren. Testdaten landen in separaten DB-Tabellen (`wp_lotro_deaths_test`, `wp_lotro_characters_test`) und werden nach dem Test explizit geleert.
+
+### Test-Endpunkte
+
+```
+POST   /wp-json/lotro-deaths/v1/test/death          # Test-Event senden
+GET    /wp-json/lotro-deaths/v1/test/death/current  # Ältester unverarbeiteter Test-Eintrag
+POST   /wp-json/lotro-deaths/v1/test/death/next     # Test-Eintrag als gezeigt markieren
+GET    /wp-json/lotro-deaths/v1/test/queue          # Test-Queue-Status
+GET    /wp-json/lotro-deaths/v1/test/health         # Test-API-Status
+DELETE /wp-json/lotro-deaths/v1/test/clear          # Testtabellen leeren [Admin-Auth]
+```
+
+### Client im Test-Modus starten
+
+```bash
+# Env-Override – schickt Events an Test-Endpunkt
+SERVER_URL=https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/death node client.js
+```
+
+### Test-Overlay
+
+`Overlay/streamelements-overlay-test.html` — kann lokal im Browser geöffnet werden (Doppelklick). Enthält:
+- Sichtbare TEST-MODE-Badge (rot)
+- Keine Sounds
+- Kein Streamer-Filter (alle Test-Events werden angezeigt)
+- Kürzere Anzeigedauer (6 s statt 10 s)
+- Status-Zeile mit Queue-Info
+
+### Nach dem Test aufräumen
+
+```powershell
+# Testtabellen leeren (PowerShell, Admin-Credentials erforderlich)
+Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/clear" `
+  -Method DELETE `
+  -Headers @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("user:apppassword")) }
+```
+
+### Implementierungsdetails
+
+- `with_test_tables(callable $fn)` in `lotro-death-tracker.php`: tauscht `$this->table_deaths`/`$this->table_characters` temporär gegen die `_test`-Varianten und ruft `$fn()` auf. Da PHP single-threaded pro Request ist, ist das Swapping sicher.
+- Teste Tabellen werden in `create_tables()` angelegt (gleiche Schema via `str_replace` auf den SQL-Strings). `SHOW COLUMNS`-Fallback läuft für beide Tabellen-Gruppen.
+- `api_test_clear()` nutzt `TRUNCATE` (nicht DELETE) → schneller, setzt Auto-Increment zurück.

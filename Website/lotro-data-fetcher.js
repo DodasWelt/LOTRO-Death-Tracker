@@ -1,6 +1,6 @@
 /**
  * LOTRO Death Tracker - Data Fetcher
- * Version: 2.0
+ * Version: 2.1
  *
  * Einfache JavaScript-Bibliothek zum Abrufen von LOTRO Character Death Daten
  * für die Integration in beliebige Webseiten.
@@ -8,7 +8,7 @@
  * VERWENDUNG:
  * -----------
  * 1. Dieses Skript in die Website einbinden (jsDelivr CDN):
- *    <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.0/Website/lotro-data-fetcher.js"></script>
+ *    <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.1/Website/lotro-data-fetcher.js"></script>
  *
  * 2. Daten abrufen und verwenden:
  *    LOTROData.getLatestDeath().then(data => {
@@ -92,6 +92,8 @@ const LOTROData = (function() {
      * Nutzt den /characters Endpoint für aktuelle Daten (wird auch bei Level-Ups aktualisiert).
      * @param {string} characterName - Optional: Filtere nach Charakter-Name
      * @returns {Promise<Object|null>} Character-Objekt oder null
+     *   Enthält ab v2.1: race (z.B. "Hobbit"), characterClass (z.B. "Jäger") — kann null sein,
+     *   wenn der Charakter noch kein Event seit v2.1 gesendet hat.
      */
     async function getCurrentCharacter(characterName = null) {
         try {
@@ -117,6 +119,7 @@ const LOTROData = (function() {
     /**
      * Holt Liste aller verfügbaren Characters mit Level und Todes-Statistiken.
      * @returns {Promise<Array>} Array von Character-Objekten
+     *   Enthält ab v2.1: race (z.B. "Elb"), characterClass (z.B. "Runenbewahrer") — kann null sein.
      */
     async function getAllCharacters() {
         try {
@@ -250,15 +253,17 @@ const LOTROData = (function() {
         const region     = death.region     || 'Unknown';
 
         return {
-            id:            death.id,
-            characterName: death.characterName,
-            level:         level,
-            deathCount:    deathCount,
-            region:        region,
-            date:          death.date,
-            time:          death.time,
-            datetime:      death.datetime,
-            shownAt:       death.shownAt || null,
+            id:             death.id,
+            characterName:  death.characterName,
+            level:          level,
+            deathCount:     deathCount,
+            region:         region,
+            race:           death.race           || null,
+            characterClass: death.characterClass || null,
+            date:           death.date,
+            time:           death.time,
+            datetime:       death.datetime,
+            shownAt:        death.shownAt || null,
             // Fertige Anzeigetexte für direkte Verwendung.
             // SICHERHEIT: Nur mit element.textContent einsetzen, NIEMALS mit innerHTML –
             // die Werte stammen aus der API und könnten HTML-Zeichen enthalten.
@@ -273,6 +278,13 @@ const LOTROData = (function() {
 
     /**
      * Ruft Callback auf, sobald ein neuer Death in der History erscheint.
+     *
+     * Hinweis: Der Callback wird **beim ersten Aufruf sofort** mit dem aktuell
+     * neuesten Tod aus der History ausgelöst (da lastDeathId initial null ist).
+     * Das ist beabsichtigt – so zeigt die Website beim Laden immer den letzten
+     * bekannten Tod. Wenn nur neue Tode ab Seitenaufruf gewünscht sind, sollte
+     * der erste Callback-Aufruf im Handler ignoriert werden.
+     *
      * @param {Function} callback - Wird mit dem neuen Death-Objekt aufgerufen
      * @param {number} interval   - Prüf-Intervall in ms (Standard: 30000)
      * @returns {number} Interval-ID zum Stoppen mit clearInterval()

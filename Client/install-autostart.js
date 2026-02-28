@@ -60,7 +60,7 @@ function compareVersions(a, b) {
 function downloadRaw(rawUrl, destPath, cb) {
     function get(url, redirects) {
         if (redirects > 5) { cb(new Error('Zu viele Weiterleitungen')); return; }
-        const tmpPath = destPath + '.tmp';
+        const tmpPath = destPath + '.tmp' + (redirects > 0 ? '.' + redirects : '');
         const file = fs.createWriteStream(tmpPath);
         const req = https.get(url, { headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' } }, function(res) {
             if (res.statusCode === 301 || res.statusCode === 302) {
@@ -103,6 +103,18 @@ function checkAndApplyUpdate() {
     const currentVersion = getCurrentVersion();
     log('Update-Check (installiert: v' + currentVersion + ')...');
 
+    // Altes Staging-Verzeichnis aufräumen (abgebrochener vorheriger Versuch)
+    const stagingDir = path.join(__dirname, 'update-staging');
+    try {
+        if (fs.existsSync(stagingDir)) {
+            fs.readdirSync(stagingDir).forEach(function(f) {
+                try { fs.unlinkSync(path.join(stagingDir, f)); } catch (_) {}
+            });
+            fs.rmdirSync(stagingDir);
+            log('Altes Staging-Verzeichnis bereinigt.');
+        }
+    } catch (e) { log('Staging-Bereinigung: ' + e.message); }
+
     const req = https.request({
         hostname: 'api.github.com',
         path: '/repos/' + GITHUB_REPO + '/releases/latest',
@@ -135,53 +147,124 @@ function checkAndApplyUpdate() {
                 return;
             }
 
-            log('Update auf v' + remoteVersion + ' wird heruntergeladen...');
             const base = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/';
 
-            const filesToDownload = [
-                { url: base + 'client.js',            dest: path.join(__dirname, 'client.js') },
-                { url: base + 'install-autostart.js', dest: path.join(__dirname, 'install-autostart.js') },
-                { url: base + 'package.json',         dest: path.join(__dirname, 'package.json') },
-                { url: base + 'updater.js',           dest: UPDATER_PATH },
-            ];
-
-            let idx = 0;
-            function downloadNext() {
-                if (idx >= filesToDownload.length) {
-                    // Alle Dateien geladen – Updater spawnen und Watcher beenden
-                    log('Download abgeschlossen – starte Updater...');
-                    const updater = spawn(process.execPath, [UPDATER_PATH, remoteVersion], {
-                        detached: true,
-                        stdio: 'ignore',
-                        windowsHide: true
-                    });
-                    updater.unref();
-
-                    if (clientProcess && !clientProcess.killed) {
-                        try { process.kill(clientProcess.pid); } catch (e) {}
-                    }
-                    if (checkInterval) clearInterval(checkInterval);
-                    log('Watcher beendet sich fuer Update auf v' + remoteVersion + '...');
-                    process.exit(0);
+            // URL-Vorab-Validierung: prüfe ob der Tag auf raw.githubusercontent.com erreichbar ist
+            log('Validiere Update-URL...');
+            const validationPath = '/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/version.json.template';
+            const headReq = https.request({
+                hostname: 'raw.githubusercontent.com',
+                path: validationPath,
+                method: 'HEAD',
+                headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' }
+            }, function(headRes) {
+                headRes.resume();
+                if (headRes.statusCode !== 200) {
+                    log('URL-Validierung fehlgeschlagen (HTTP ' + headRes.statusCode + ') – Update abgebrochen');
                     return;
                 }
-                const f = filesToDownload[idx++];
-                log('Lade: ' + f.url.split('/').pop());
-                downloadRaw(f.url, f.dest, function(err) {
-                    if (err) {
-                        log('Download-Fehler (' + f.url.split('/').pop() + '): ' + err.message + ' – Update abgebrochen');
-                        return;
-                    }
-                    downloadNext();
-                });
-            }
-            downloadNext();
+                startDownload(base, remoteVersion, stagingDir);
+            });
+            let headTimedOut = false;
+            headReq.on('error', function(e) {
+                if (!headTimedOut) log('URL-Validierung: ' + e.message + ' – Update abgebrochen');
+            });
+            headReq.setTimeout(10000, function() {
+                headTimedOut = true;
+                headReq.destroy();
+                log('URL-Validierung: Timeout – Update abgebrochen');
+            });
+            headReq.end();
         });
     });
 
-    req.on('error', function(e) { log('Update-Check: ' + e.message + ' – uebersprungen'); });
-    req.setTimeout(15000, function() { log('Update-Check: Timeout – uebersprungen'); req.destroy(); });
+    let reqTimedOut = false;
+    req.on('error', function(e) { if (!reqTimedOut) log('Update-Check: ' + e.message + ' – uebersprungen'); });
+    req.setTimeout(15000, function() { reqTimedOut = true; log('Update-Check: Timeout – uebersprungen'); req.destroy(); });
     req.end();
+}
+
+function startDownload(base, remoteVersion, stagingDir) {
+    try {
+        fs.mkdirSync(stagingDir);
+    } catch (e) {
+        log('Staging-Verzeichnis konnte nicht erstellt werden: ' + e.message + ' – Update abgebrochen');
+        return;
+    }
+
+    log('Update auf v' + remoteVersion + ' wird heruntergeladen...');
+
+    const filesToDownload = [
+        { name: 'client.js',            dest: path.join(__dirname, 'client.js') },
+        { name: 'install-autostart.js', dest: path.join(__dirname, 'install-autostart.js') },
+        { name: 'package.json',         dest: path.join(__dirname, 'package.json') },
+        { name: 'updater.js',           dest: UPDATER_PATH },
+    ];
+
+    function cleanupStaging() {
+        try {
+            fs.readdirSync(stagingDir).forEach(function(sf) {
+                try { fs.unlinkSync(path.join(stagingDir, sf)); } catch (_) {}
+            });
+            fs.rmdirSync(stagingDir);
+        } catch (_) {}
+    }
+
+    let idx = 0;
+    function downloadNext() {
+        if (idx >= filesToDownload.length) {
+            // Alle Dateien im Staging – jetzt atomar in Produktion umbenennen
+            log('Alle Downloads erfolgreich – ersetze Produktionsdateien...');
+            let renameErr = null;
+            filesToDownload.forEach(function(f) {
+                if (renameErr) return;
+                const stagingPath = path.join(stagingDir, f.name);
+                try {
+                    if (fs.existsSync(f.dest)) fs.unlinkSync(f.dest);
+                    fs.renameSync(stagingPath, f.dest);
+                } catch (e) {
+                    renameErr = e;
+                    log('Rename fehlgeschlagen (' + f.name + '): ' + e.message);
+                }
+            });
+
+            cleanupStaging();
+
+            if (renameErr) {
+                log('Update fehlgeschlagen – Produktionsdateien konnten nicht ersetzt werden.');
+                return;
+            }
+
+            // Updater spawnen und Watcher beenden
+            log('Download abgeschlossen – starte Updater...');
+            const updater = spawn(process.execPath, [UPDATER_PATH, remoteVersion], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+            });
+            updater.unref();
+
+            if (clientProcess && !clientProcess.killed) {
+                try { process.kill(clientProcess.pid); } catch (e) {}
+            }
+            if (checkInterval) clearInterval(checkInterval);
+            log('Watcher beendet sich fuer Update auf v' + remoteVersion + '...');
+            process.exit(0);
+            return;
+        }
+        const f = filesToDownload[idx++];
+        log('Lade: ' + f.name);
+        const stagingPath = path.join(stagingDir, f.name);
+        downloadRaw(base + f.name, stagingPath, function(err) {
+            if (err) {
+                log('Download-Fehler (' + f.name + '): ' + err.message + ' – Update abgebrochen');
+                cleanupStaging();
+                return;
+            }
+            downloadNext();
+        });
+    }
+    downloadNext();
 }
 
 // ── Ende Auto-Update ───────────────────────────────────────────────────────

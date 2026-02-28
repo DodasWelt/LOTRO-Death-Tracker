@@ -109,9 +109,7 @@ if not exist "%PLUGINS_PATH%\DodasWelt" mkdir "%PLUGINS_PATH%\DodasWelt"
 
 REM Kopiere Plugin-Dateien
 echo   - Kopiere DeathTracker.plugin...
-if exist "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" (
-    copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" "%PLUGINS_PATH%\DodasWelt\" >nul
-) else (
+if not exist "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" (
     echo [FEHLER] DeathTracker.plugin nicht gefunden!
     echo Aktuelles Verzeichnis: %CD%
     echo.
@@ -119,27 +117,23 @@ if exist "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" (
     pause
     exit /b 1
 )
+copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" "%PLUGINS_PATH%\DodasWelt\" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] DeathTracker.plugin konnte nicht kopiert werden! & pause & exit /b 1 )
 
 echo   - Kopiere Main.lua...
 if not exist "%PLUGINS_PATH%\DodasWelt\DeathTracker" mkdir "%PLUGINS_PATH%\DodasWelt\DeathTracker"
-if exist "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" (
-    copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" "%PLUGINS_PATH%\DodasWelt\DeathTracker\" >nul
-) else (
+if not exist "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" (
     echo [FEHLER] Main.lua nicht gefunden!
     echo Aktuelles Verzeichnis: %CD%
     pause
     exit /b 1
 )
+copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" "%PLUGINS_PATH%\DodasWelt\DeathTracker\" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] Main.lua konnte nicht kopiert werden! & pause & exit /b 1 )
 
-if %errorLevel% equ 0 (
-    echo OK - Plugin installiert in: %PLUGINS_PATH%\DodasWelt
-    echo   - DeathTracker.plugin
-    echo   - DeathTracker\Main.lua
-) else (
-    echo [FEHLER] Plugin-Installation fehlgeschlagen!
-    pause
-    exit /b 1
-)
+echo OK - Plugin installiert in: %PLUGINS_PATH%\DodasWelt
+echo   - DeathTracker.plugin
+echo   - DeathTracker\Main.lua
 echo.
 
 echo [SCHRITT 4/5] Installiere Node.js Client...
@@ -151,9 +145,13 @@ if not exist "%CLIENT_PATH%" mkdir "%CLIENT_PATH%"
 
 REM Kopiere Client-Dateien einzeln
 copy /Y "Client\client.js" "%CLIENT_PATH%\" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] client.js konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\package.json" "%CLIENT_PATH%\" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] package.json konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\install-autostart.js" "%CLIENT_PATH%\" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] install-autostart.js konnte nicht kopiert werden! & pause & exit /b 1 )
 copy /Y "Client\version.json.template" "%CLIENT_PATH%\version.json" >nul
+if %errorLevel% neq 0 ( echo [FEHLER] version.json konnte nicht kopiert werden! & pause & exit /b 1 )
 
 REM Installiere npm dependencies
 cd /d "%CLIENT_PATH%"
