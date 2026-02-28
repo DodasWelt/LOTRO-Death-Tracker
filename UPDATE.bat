@@ -76,11 +76,45 @@ if %errorLevel% neq 0 ( echo [FEHLER] version.json konnte nicht kopiert werden! 
 echo OK - Client-Dateien aktualisiert
 echo.
 
+REM --- Node.js-Pfad ermitteln (auch im Admin-Kontext zuverlaessig) ---
+set "NODE_CMD=node"
+set "NPM_CMD=npm"
+where node >nul 2>&1
+if %errorLevel% equ 0 goto :node_ready
+
+echo   - Node.js nicht im Admin-PATH, suche Installationspfade...
+if exist "%PROGRAMFILES%\nodejs\node.exe" (
+    set "NODE_CMD=%PROGRAMFILES%\nodejs\node.exe"
+    set "NPM_CMD=%PROGRAMFILES%\nodejs\npm.cmd"
+    echo   - Gefunden: %PROGRAMFILES%\nodejs
+    goto :node_ready
+)
+if exist "%USERPROFILE%\AppData\Local\Programs\node\node.exe" (
+    set "NODE_CMD=%USERPROFILE%\AppData\Local\Programs\node\node.exe"
+    set "NPM_CMD=%USERPROFILE%\AppData\Local\Programs\node\npm.cmd"
+    echo   - Gefunden: %USERPROFILE%\AppData\Local\Programs\node
+    goto :node_ready
+)
+
+echo.
+echo [FEHLER] Node.js wurde nicht gefunden.
+echo Die Client-Dateien wurden bereits kopiert (Schritt 2 erfolgreich).
+echo.
+echo Bitte abschliessen in normalem PowerShell (kein Admin):
+echo   cd C:\LOTRO-Death-Tracker
+echo   node install-autostart.js install
+echo.
+pause
+exit /b 1
+
+:node_ready
+echo.
+
 echo [SCHRITT 3/5] Aktualisiere Node.js Pakete...
 echo ----------------------------------------------------------------
 cd /d "%CLIENT_PATH%"
 echo   - Installiere Pakete (kann 1-2 Minuten dauern)...
-call npm install --silent --no-progress >nul 2>&1
+call "%NPM_CMD%" install --silent --no-progress >nul 2>&1
 if %errorLevel% equ 0 (
     echo OK - Pakete aktualisiert
 ) else (
@@ -178,7 +212,7 @@ echo.
 echo [SCHRITT 5/5] Konfiguriere Autostart und starte Watcher...
 echo ----------------------------------------------------------------
 cd /d "%CLIENT_PATH%"
-call node install-autostart.js install >nul 2>&1
+call "%NODE_CMD%" install-autostart.js install >nul 2>&1
 if %errorLevel% equ 0 (
     echo OK - Autostart konfiguriert und Watcher gestartet
 ) else (
