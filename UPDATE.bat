@@ -1,5 +1,5 @@
 @echo off
-title LOTRO Death Tracker - Update auf v2.1
+title LOTRO Death Tracker - Update auf v2.0
 
 REM Wechsle in das Verzeichnis wo die BAT-Datei liegt
 cd /d "%~dp0"
@@ -7,7 +7,7 @@ cd /d "%~dp0"
 echo.
 echo ================================================================
 echo.
-echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.1
+echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.0
 echo.
 echo ================================================================
 echo.
@@ -15,6 +15,25 @@ echo Dieses Programm aktualisiert deine bestehende Installation:
 echo   - LOTRO Plugin (neue Version)
 echo   - Node.js Client (neue Version)
 echo   - Autostart-Konfiguration
+echo.
+echo ================================================================
+echo.
+echo WICHTIGE HINWEISE (bitte lesen, falls das Fenster sofort schliesst):
+echo.
+echo   1. Als Administrator ausfuehren!
+echo      Rechtsklick auf UPDATE.bat - "Als Administrator ausfuehren"
+echo.
+echo   2. ZIP-Datei und BAT entsperren!
+echo      Windows blockiert heruntergeladene Dateien ohne Fehlermeldung.
+echo      Loesung: Rechtsklick auf die ZIP-Datei - Eigenschaften -
+echo      Haken bei "Zulassen" setzen - OK - dann erst entpacken.
+echo.
+echo   3. Antivirenprogramm-Ausnahme setzen!
+echo      AV-Programme (z.B. Kaspersky) koennen die Ausfuehrung
+echo      still blockieren. Bitte fuer folgende Dateien eine Ausnahme
+echo      einrichten oder temporaer deaktivieren:
+echo        C:\LOTRO-Death-Tracker\
+echo        [Ordner dieser UPDATE.bat]
 echo.
 echo ================================================================
 echo.
@@ -60,6 +79,8 @@ if exist "%STARTUP_VBS%" (
 
 REM Alle laufenden Node.js-Prozesse beenden (Watcher + Client).
 REM Hinweis: Betrifft ALLE node.exe-Prozesse auf diesem PC.
+REM taskkill ist hier noetig, damit Datei-Handles freigegeben werden,
+REM bevor neue Dateien kopiert werden (verhindert "Datei wird verwendet"-Fehler).
 echo   - Beende laufende Node.js-Prozesse...
 taskkill /F /IM node.exe /T >nul 2>&1
 REM Kurz warten bis Datei-Handles freigegeben sind
@@ -267,7 +288,7 @@ echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.1
+echo                  Installierte Version: 2.0
 echo.
 echo ================================================================
 echo.

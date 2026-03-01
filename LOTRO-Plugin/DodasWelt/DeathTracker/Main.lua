@@ -1,7 +1,19 @@
--- DeathTracker Plugin for LOTRO v2.1
--- Detects player death AND level ups, logs to file for stream overlay integration
--- Author: DodasWelt
--- Version: 2.1
+-- =============================================================================
+-- DeathTracker - LOTRO Plugin (Lord of the Rings Online)
+-- =============================================================================
+-- Dieses Script ist ein legitimes Spiel-Plugin fuer Lord of the Rings Online.
+-- Es wird ausschliesslich ueber die offizielle LOTRO Turbine Plugin-API
+-- ausgefuehrt und hat KEINEN Zugriff auf das Dateisystem, das Netzwerk oder
+-- andere Systemressourcen ausserhalb des Spiels.
+--
+-- Zweck: Erkennung von Spieler-Toden und Level-Aufstiegen im Spiel,
+--        Speicherung via Turbine.PluginData.Save() in einem spielinternen
+--        Datenformat (kein externer Netzwerkzugriff aus diesem Script heraus).
+--
+-- Autor:   DodasWelt / Herrin Inge (https://www.dodaswelt.de)
+-- Version: 2.0
+-- Lizenz:  Keine schaedlichen Aktionen. Offen einsehbarer Quellcode.
+-- =============================================================================
 
 import "Turbine";
 import "Turbine.Gameplay";
@@ -13,7 +25,7 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "2.1",
+    version = "2.0",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
     lastLevelWasLogged = false,
@@ -197,7 +209,11 @@ function DeathTracker:LogEvent(eventType)
     DeathTracker:WriteSyncFile(jsonString, eventType);
 end
 
--- Write sync file that the client application can monitor
+-- Schreibt Event-Daten in die spielinterne PluginData-Ablage.
+-- Turbine.PluginData.Save() ist eine offizielle LOTRO API-Funktion.
+-- Sie schreibt ausschliesslich in den spieleigenen PluginData-Ordner:
+--   Dokumente\The Lord of the Rings Online\PluginData\[Server]\[Charakter]\
+-- Es findet kein Netzwerkzugriff und keine Ausfuehrung externer Programme statt.
 function DeathTracker:WriteSyncFile(jsonContent, eventType)
     -- This creates a file in the character-specific PluginData location
     -- Path: PluginData\[Server]\[Character]\DeathTracker_Sync\
@@ -212,7 +228,9 @@ function DeathTracker:WriteSyncFile(jsonContent, eventType)
     Turbine.PluginData.Save(Turbine.DataScope.Character, "DeathTracker_Sync", syncData);
 end
 
--- Simple table to JSON converter
+-- Konvertiert eine Lua-Tabelle in einen JSON-String.
+-- Wird benoetigt weil LOTRO-Plugins kein natives JSON haben.
+-- Kein Netzwerkzugriff, kein Systemaufruf - nur String-Operationen.
 function DeathTracker:TableToJSON(tbl)
     local result = "{";
     local isFirst = true;
