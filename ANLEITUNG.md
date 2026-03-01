@@ -1,14 +1,18 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung für Streamer
 
-**Version 5.0** | Stand: Februar 2025
+**Version 2.0** | Stand: März 2026
 
 ---
 
 ## 📋 Inhaltsverzeichnis
 
 1. [Überblick](#überblick)
-2. [Voraussetzungen](#voraussetzungen)
-3. [Installation - Automatisch](#installation-automatisch)
+2. [Wichtig vor dem Start: ZIP und BAT-Datei entsperren](#wichtig-vor-dem-start-zip-und-bat-datei-entsperren)
+3. [Voraussetzungen](#voraussetzungen)
+4. [Installation - Automatisch](#installation-automatisch)
+5. [Update von Version 1.5 auf 2.0](#update-von-version-15-auf-20)
+6. [Plugin im Spiel laden](#plugin-im-spiel-laden)
+7. [StreamElements Overlay einrichten](#streamelements-overlay-einrichten)
 
 ---
 
@@ -35,27 +39,58 @@ LOTRO Spiel → Plugin → Client → Server → Overlay/Website
 
 ---
 
+## ⚠️ Wichtig vor dem Start: ZIP und BAT-Datei entsperren
+
+Windows blockiert aus dem Internet heruntergeladene Dateien automatisch ("Mark of the Web"). Ohne diesen Schritt kann es sein, dass sich das Fenster sofort wieder schließt, ohne dass etwas passiert.
+
+### Schritt 1: ZIP-Datei entsperren (VOR dem Entpacken!)
+
+1. **Rechtsklick** auf die heruntergeladene ZIP-Datei (`LOTRO-Death-Tracker-v2.0.zip`)
+2. Wähle: **Eigenschaften**
+3. Unten im Fenster: Haken bei **"Zulassen"** setzen
+4. Auf **Übernehmen** klicken, dann **OK**
+
+> ⚠️ Diesen Schritt unbedingt VOR dem Entpacken durchführen! Wird die ZIP erst entpackt und dann entsperrt, sind die enthaltenen Dateien trotzdem noch blockiert.
+
+### Schritt 2: BAT-Datei entsperren (nach dem Entpacken)
+
+Auch nach dem Entpacken muss die ausführbare Datei einzeln entsperrt werden:
+
+- **Für Erstinstallation:** Rechtsklick auf `INSTALL.bat` → Eigenschaften → Haken bei "Zulassen" → Übernehmen → OK
+- **Für Update:** Rechtsklick auf `UPDATE.bat` → Eigenschaften → Haken bei "Zulassen" → Übernehmen → OK
+
+Danach die Datei als Administrator ausführen (siehe unten).
+
+### Falls das Fenster sich trotzdem sofort schließt
+
+Eine Diagnose-Logdatei (`install.log` bzw. `update.log`) wird im selben Ordner wie die BAT-Datei erstellt. Existiert diese Datei NICHT, ist die BAT selbst noch blockiert (Schritt 2 wiederholen). Existiert sie, enthält sie den genauen Fehlergrund.
+
+---
+
 ## ⚙️ Voraussetzungen
 
 ### Was du brauchst:
 
-#### ✅ **Node.js (WICHTIG!)**
-- **Installation starten:** Doppelklick auf node-v24.13.1-x64.msi
-- **Installation:** Standardeinstellungen OK (sprich alles nur bestätigen ohne Änderungen)
-- **Nach der Installation:**⚠️⚠️⚠️ SEHR SEHR WICHTIG ⚠️⚠️⚠️: PC neustarten - ist Wichtig, damit alles richtig funktioniert
+#### ✅ **Node.js**
 
-**So überprüfst du ob Node.js installiert ist:**
+Node.js ist eine Laufzeitumgebung, die der Death Tracker Client benötigt.
+
+**So überprüfst du ob Node.js bereits installiert ist:**
 1. Windows-Taste drücken
 2. `cmd` eingeben und Enter
 3. `node --version` eingeben
-4. Wenn eine Versionsnummer erscheint (z.B. `v20.11.0`) → **Installiert ✓**
-5. Wenn Fehler → **Node.js installieren**
+4. Wenn eine Versionsnummer erscheint (z.B. `v24.14.0`) → **Installiert ✓**
+5. Wenn Fehler erscheint → Node.js ist nicht installiert
+
+**Node.js nicht installiert?** Kein Problem! Die Installer-/Update-Datei erkennt das automatisch und öffnet den Download direkt im Browser. Nach der Installation von Node.js **unbedingt den PC neu starten**, bevor du INSTALL.bat oder UPDATE.bat erneut ausführst.
 
 ---
 
 ## 🚀 Installation - Automatisch (EMPFOHLEN)
 
 Der Installer macht alles automatisch!
+
+> **Voraussetzung:** ZIP entsperren + INSTALL.bat entsperren (siehe oben)
 
 #### **Schritt 1: Installer starten**
 1. In den entpackten Ordner gehen
@@ -76,58 +111,32 @@ Der Installer führt dich durch 5 Schritte:
 
 **Falls LOTRO nicht gefunden wird:**
 - Installer fragt nach dem Pfad
-- Öffne ein zweites Explorer-Fenster
-- Suche nach: `PluginData` Ordner
 - Pfad ist meistens:
-  - `C:\Program Files (x86)\Steam\steamapps\common\Lord of the Rings Online\PluginData`
-  - ODER: `C:\Users\DEINNAME\Documents\The Lord of the Rings Online\PluginData`
+  - `C:\Users\DEINNAME\Documents\The Lord of the Rings Online`
+
+**Falls Node.js nicht gefunden wird:**
+- Der Browser öffnet automatisch den Node.js-Installer
+- Node.js installieren (alle Standardeinstellungen übernehmen)
+- ⚠️ PC danach neu starten
+- INSTALL.bat erneut ausführen
 
 #### **Schritt 3: Fertig!**
 
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.0 erfolgreich installiert!"**
+
 Nach der Installation:
 - ✅ Plugin installiert
-- ✅ Client installiert
-- ✅ Autostart konfiguriert
+- ✅ Client installiert und läuft im Hintergrund
+- ✅ Autostart konfiguriert (startet automatisch mit Windows)
 - ✅ Bereit zum Streamen!
-
-## 🎮 Plugin im Spiel laden
-
-### **Erste Verwendung:**
-
-1. **Starte LOTRO**
-2. **Logge dich ein**
-3. **Öffne Chat-Fenster**
-4. **Gib ein:** `/plugins load DodasWelt.DeathTracker`
-Falls das nicht funktioniert, kannst du das Plugin auch über den Pfeil unten links -> System -> Zusatzmodule und dort den DeathTracker anwählen und oben auf laden stellen
-5. **Bestätige:** Im Chat sollte erscheinen: `DeathTracker loaded`
-
-### **Plugin-Befehle:**
-
-```
-/plugins load DodasWelt.DeathTracker    → Plugin laden
-/plugins unload DodasWelt.DeathTracker  → Plugin entladen
-/plugins list                           → Alle Plugins anzeigen
-```
-
-### **Wichtig:**
-- Plugin muss **nach jedem Login** geladen werden
-- Auto-Load kann für jeden Charakter bei Zusatzmodule (siehe ein paar Zeilen weiter oben) eingestellt werden.
-
----
-
-## 📺 StreamElements Overlay einrichten
-
-Füge die folgende URL, als neue Browserquelle in OBS ein:
-https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH
-
-Die Auflösung ist 1920 (Breite) x 1080 (Höhe)
-
 
 ---
 
 ## 🔄 Update von Version 1.5 auf 2.0
 
 Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.0 aktualisieren?
+
+> **Voraussetzung:** ZIP entsperren + UPDATE.bat entsperren (siehe oben)
 
 #### **Schritt 1: Update-Paket entpacken**
 1. Das neue ZIP entpacken
@@ -143,11 +152,14 @@ Der Updater macht automatisch:
 [2/5] Client-Dateien aktualisieren
 [3/5] Node.js Pakete aktualisieren
 [4/5] LOTRO Plugin aktualisieren
-[5/5] Autostart neu konfigurieren
+[5/5] Autostart neu konfigurieren und Watcher starten
 ```
 
-#### **Schritt 3: Windows neu starten**
-Damit der neue Autostart aktiv wird, bitte Windows neu starten oder Abmelden → Anmelden.
+#### **Schritt 3: Fertig!**
+
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.0 aktualisiert!"**
+
+Ein Windows-Neustart ist **nicht** nötig - der neue Watcher startet automatisch im Hintergrund.
 
 #### **Falls LOTRO während des Updates lief:**
 Im Spiel eingeben:
@@ -158,5 +170,40 @@ Im Spiel eingeben:
 
 ---
 
-## ❓Bei Fragen oder es funktioniert etwas nicht ##
+## 🎮 Plugin im Spiel laden
+
+### **Erste Verwendung:**
+
+1. **Starte LOTRO**
+2. **Logge dich ein**
+3. **Öffne Chat-Fenster**
+4. **Gib ein:** `/plugins load DodasWelt.DeathTracker`
+
+Falls das nicht funktioniert, kannst du das Plugin auch über den Pfeil unten links → System → Zusatzmodule → DeathTracker anwählen und oben auf "Laden" klicken.
+
+### **Plugin-Befehle:**
+
+```
+/plugins load DodasWelt.DeathTracker    → Plugin laden
+/plugins unload DodasWelt.DeathTracker  → Plugin entladen
+/plugins list                           → Alle Plugins anzeigen
+```
+
+### **Wichtig:**
+- Plugin muss **nach jedem Login** geladen werden
+- Auto-Load kann für jeden Charakter bei Zusatzmodule eingestellt werden
+
+---
+
+## 📺 StreamElements Overlay einrichten
+
+Füge die folgende URL als neue Browserquelle in OBS ein:
+https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH
+
+Die Auflösung ist 1920 (Breite) x 1080 (Höhe)
+
+---
+
+## ❓ Bei Fragen oder es funktioniert etwas nicht
+
 Melde dich via Discord bei Doda
