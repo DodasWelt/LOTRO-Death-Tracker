@@ -459,7 +459,8 @@ function install() {
         console.log('  Client:  ' + path.join(__dirname, 'client.log'));
         console.log('');
         console.log('═════════════════════════════════════════════════');
-        
+        process.exit(0); // Explizit mit Code 0 beenden – verhindert unhandled-error durch AV-Kill des Watcher-Spawns
+
     } catch (error) {
         console.error('');
         console.error('═════════════════════════════════════════════════');

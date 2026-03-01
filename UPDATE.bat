@@ -307,18 +307,15 @@ echo [%DATE% %TIME%] Schritt 5: install-autostart.js >> "%UPDATE_LOG%"
 cd /d "%CLIENT_PATH%"
 REM >> statt > damit frueheres Log erhalten bleibt
 call "%NODE_CMD%" install-autostart.js install >> "%UPDATE_LOG%" 2>&1
+echo [%DATE% %TIME%] Schritt 5: install-autostart.js exitCode=%errorLevel% >> "%UPDATE_LOG%"
 if %errorLevel% neq 0 (
+    echo [%DATE% %TIME%] FEHLER: install-autostart.js fehlgeschlagen >> "%UPDATE_LOG%"
     echo.
     echo [FEHLER] Watcher konnte nicht gestartet werden!
     echo.
-    echo Fehler-Details (gespeichert als: %UPDATE_LOG%):
-    echo ----------------------------------------------------------------
-    type "%UPDATE_LOG%"
-    echo ----------------------------------------------------------------
+    echo Bitte Log pruefen: %UPDATE_LOG%
     echo.
-    echo Die Update-Dateien wurden kopiert (Schritte 1-4 erfolgreich).
-    echo Bitte Watcher manuell starten in PowerShell (kein Admin):
-    echo.
+    echo Manuell in PowerShell starten (kein Admin):
     echo   cd C:\LOTRO-Death-Tracker
     echo   node install-autostart.js install
     echo.
@@ -328,6 +325,7 @@ if %errorLevel% neq 0 (
 
 REM Kurz warten und pruefen ob Watcher tatsaechlich laeuft
 echo   - Pruefe ob Watcher laeuft (3 Sekunden)...
+echo [%DATE% %TIME%] Schritt 5: Pruefe node.exe via tasklist... >> "%UPDATE_LOG%"
 timeout /t 3 /nobreak >nul
 tasklist /FI "IMAGENAME eq node.exe" /NH 2>nul | find "node.exe" >nul 2>&1
 if %errorLevel% neq 0 (
@@ -367,4 +365,9 @@ echo Bei Fragen: Discord bei Doda
 echo.
 echo ================================================================
 echo.
-pause
+
+REM Zeige Erfolgs-Popup - sichtbar auch wenn das CMD-Fenster sich schliesst
+echo MsgBox "LOTRO Death Tracker v2.0 aktualisiert! Watcher laeuft im Hintergrund. Windows-Neustart ist NICHT noetig.", 64, "Update fertig!" > "%TEMP%\_lotro_update_done.vbs"
+cscript //nologo "%TEMP%\_lotro_update_done.vbs"
+del "%TEMP%\_lotro_update_done.vbs" >nul 2>&1
+echo [%DATE% %TIME%] UPDATE abgeschlossen (Popup bestaetigt) >> "%UPDATE_LOG%"
