@@ -213,11 +213,13 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 
 13. **`UPDATE.bat` Node.js-Pfad im Admin-Kontext** — `node` ist bei benutzerweiten Installationen (nvm, User-Installer) nicht im Admin-PATH. UPDATE.bat erkennt Node.js daher aktiv: erst `where node`, dann Fallback auf `%PROGRAMFILES%\nodejs\node.exe` und `%USERPROFILE%\AppData\Local\Programs\node\node.exe`. Gefundener Pfad wird in `%NODE_CMD%`/`%NPM_CMD%` gespeichert; alle nachfolgenden Aufrufe nutzen diese Variablen. Nicht gefunden → klare Fehlermeldung mit manueller Anleitung + `pause`.
 
-14. **`UPDATE.bat` Logdatei bei `%~dp0`** — Das Installationslog (`install-autostart.js install`) landet unter `%~dp0update.log` (= Verzeichnis der UPDATE.bat), **nicht** in `%TEMP%`. Grund: `%TEMP%` zeigt im Admin-Kontext auf `C:\Windows\Temp`, nicht auf den Nutzer-Temp-Ordner. Die Logdatei wird weder bei Erfolg noch bei Fehler gelöscht. Schritt 5 prüft per `tasklist /FI "IMAGENAME eq node.exe"` ob `node.exe` nach dem Start läuft — schlägt die Prüfung fehl, erscheint eine **Warnung** (nicht `[FEHLER]`), da Kaspersky node.exe innerhalb der 3s-Wartezeit beenden kann. `UPDATE ERFOLGREICH!` wird in jedem Fall angezeigt, wenn `install-autostart.js install` (node-Aufruf) erfolgreich war. Schritt 3 (`npm install`) entfernt zuvor ein ggf. vorhandenes defektes `node_modules\npm`-Verzeichnis (Ursache für `MODULE_NOT_FOUND`-Fehler mit lokalem npm), bevor der globale `NPM_CMD` aufgerufen wird.
+14. **`UPDATE.bat`/`INSTALL.bat` Logdatei bei `%~dp0`** — Das Log landet unter `%~dp0update.log` bzw. `%~dp0install.log` (= Verzeichnis der BAT-Datei), **nicht** in `%TEMP%`. Grund: `%TEMP%` zeigt im Admin-Kontext auf `C:\Windows\Temp`, nicht auf den Nutzer-Temp-Ordner. Die Logdatei wird weder bei Erfolg noch bei Fehler gelöscht. Schritt 3 (`npm install`) entfernt zuvor ein ggf. vorhandenes defektes `node_modules\npm`-Verzeichnis (Ursache für `MODULE_NOT_FOUND`-Fehler mit lokalem npm), bevor der globale `NPM_CMD` aufgerufen wird. Am Ende erscheint ein VBScript-Popup (`cscript //nologo`) zur Bestätigung — dieses blockt das Skript und ist sichtbar, auch wenn das CMD-Fenster sich danach schließt.
 
 15. **`vbsDialog()` in `updater.js` — `windowsHide: false` ist absichtlich** — Der Updater wird zwar mit `windowsHide: true` gespawnt (läuft unsichtbar), aber `wscript.exe` für VBScript-MsgBox-Dialoge MUSS mit `windowsHide: false` aufgerufen werden. VBScript-Dialoge erscheinen trotzdem sichtbar, auch wenn der Elternprozess versteckt ist. Die temporäre VBS-Datei (`_upd_dlg.vbs`) wird mit `'latin1'`-Encoding geschrieben, damit deutsche Umlaute (Windows-1252) korrekt dargestellt werden. Rückgabewerte: 6=Ja (vbYes), 7=Nein (vbNo), 1=OK.
 
-16. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
+16. **`goto`-basierte Kontrollstruktur in BAT-Dateien** — Multi-line `if (...) else (...)` Blöcke nach `call`-Befehlen können CMD dazu bringen, das Skript still abzubrechen (kein Fehlercode, kein Output). Deshalb: nach jedem `call` sofort `set "EC=%errorLevel%"` (noch VOR dem nächsten `echo`, da `echo` `%errorLevel%` zurücksetzt), dann `if "%EC%" neq "0" goto :error_label`. Dieses Muster ist in INSTALL.bat und UPDATE.bat konsequent durchgezogen.
+
+17. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
 
 ---
 
@@ -316,15 +318,30 @@ Jeder Release enthält zwei ZIP-Assets:
 
 **Release erstellen** (wenn der Nutzer es mitteilt):
 ```bash
-# ZIPs erstellen (via python3, da zip meist nicht installiert)
-python3 -c "import shutil; shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')"
+# 1. Staging-Verzeichnis mit Top-Level-Ordner anlegen (ZIP muss Ordner enthalten!)
+mkdir -p LOTRO-Death-Tracker-vX.Y
+cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat ANLEITUNG.md LOTRO-Death-Tracker-vX.Y/
 
-# GitHub Release + Tag anlegen
+# 2. Streamer-ZIP erstellen
+python3 -c "
+import shutil, os
+shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')
+"
+
+# 3. WP-Plugin-ZIP erstellen (muss Struktur lotro-death-tracker/lotro-death-tracker.php haben)
+mkdir -p lotro-death-tracker
+cp WordPress/lotro-death-tracker.php lotro-death-tracker/
+python3 -c "import shutil; shutil.make_archive('lotro-death-tracker', 'zip', '.', 'lotro-death-tracker')"
+
+# 4. GitHub Release + Tag anlegen
 gh release create vX.Y \
   --title "vX.Y – ..." \
   --notes "..." \
   LOTRO-Death-Tracker-vX.Y.zip \
   lotro-death-tracker.zip
+
+# 5. Aufräumen
+rm -rf LOTRO-Death-Tracker-vX.Y lotro-death-tracker
 ```
 
 ### LOTRO-Pfad-Erkennung (INSTALL.bat, UPDATE.bat, client.js)
@@ -333,7 +350,8 @@ Prüfreihenfolge:
 1. Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders\Personal`
 2. OneDrive: `%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online`
 3. Standard: `%USERPROFILE%\Documents\The Lord of the Rings Online`
-4. Manuelle Eingabe (wenn alle Fallbacks scheitern)
+4. **Nur INSTALL.bat:** Manuelle Eingabe via `SET /P` (Erstinstallation akzeptiert interaktiven Input)
+   **UPDATE.bat:** Plugin-Update wird still übersprungen (Warnung + manuelle Kopieranleitung, kein Input-Prompt)
 
 StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH` (1920×1080)
 
