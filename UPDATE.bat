@@ -307,42 +307,30 @@ echo [%DATE% %TIME%] Schritt 5: install-autostart.js >> "%UPDATE_LOG%"
 cd /d "%CLIENT_PATH%"
 REM >> statt > damit frueheres Log erhalten bleibt
 call "%NODE_CMD%" install-autostart.js install >> "%UPDATE_LOG%" 2>&1
-echo [%DATE% %TIME%] Schritt 5: install-autostart.js exitCode=%errorLevel% >> "%UPDATE_LOG%"
-if %errorLevel% neq 0 (
-    echo [%DATE% %TIME%] FEHLER: install-autostart.js fehlgeschlagen >> "%UPDATE_LOG%"
-    echo.
-    echo [FEHLER] Watcher konnte nicht gestartet werden!
-    echo.
-    echo Bitte Log pruefen: %UPDATE_LOG%
-    echo.
-    echo Manuell in PowerShell starten (kein Admin):
-    echo   cd C:\LOTRO-Death-Tracker
-    echo   node install-autostart.js install
-    echo.
-    pause
-    exit /b 1
-)
-
-REM Kurz warten und pruefen ob Watcher tatsaechlich laeuft
-echo   - Pruefe ob Watcher laeuft (3 Sekunden)...
-echo [%DATE% %TIME%] Schritt 5: Pruefe node.exe via tasklist... >> "%UPDATE_LOG%"
-timeout /t 3 /nobreak >nul
-tasklist /FI "IMAGENAME eq node.exe" /NH 2>nul | find "node.exe" >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [WARNUNG] Watcher laeuft noch nicht (node.exe nicht im Task-Manager gefunden).
-    echo [WARNUNG] Moegliche Ursache: Antivirusprogramm (z.B. Kaspersky) hat node.exe blockiert.
-    echo [WARNUNG] Loesung: node.exe / C:\LOTRO-Death-Tracker in AV-Ausnahmen eintragen,
-    echo [WARNUNG] dann manuell starten in PowerShell (kein Admin):
-    echo [WARNUNG]   cd C:\LOTRO-Death-Tracker
-    echo [WARNUNG]   node install-autostart.js install
-    echo [%DATE% %TIME%] WARNUNG: node.exe nach Start nicht gefunden (AV-Blockade moeglich) >> "%UPDATE_LOG%"
-) else (
-    echo OK - Autostart konfiguriert und Watcher laeuft
-    echo [%DATE% %TIME%] Schritt 5 OK - Watcher laeuft >> "%UPDATE_LOG%"
-)
+set "INSTALL_EC=%errorLevel%"
+echo [%DATE% %TIME%] Schritt 5: install-autostart.js exitCode=%INSTALL_EC% >> "%UPDATE_LOG%"
+if "%INSTALL_EC%" neq "0" goto :step5_error
+echo [%DATE% %TIME%] Schritt 5 OK >> "%UPDATE_LOG%"
+echo OK - Autostart konfiguriert und Watcher gestartet
 echo   Log gespeichert als: %UPDATE_LOG%
-echo.
+goto :show_success
 
+:step5_error
+echo [%DATE% %TIME%] FEHLER: install-autostart.js Code %INSTALL_EC% >> "%UPDATE_LOG%"
+echo.
+echo [FEHLER] Watcher konnte nicht gestartet werden! (Code: %INSTALL_EC%)
+echo.
+echo Bitte Log pruefen: %UPDATE_LOG%
+echo.
+echo Manuell starten in PowerShell (kein Admin):
+echo   cd C:\LOTRO-Death-Tracker
+echo   node install-autostart.js install
+echo.
+pause
+exit /b 1
+
+:show_success
+echo.
 echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
