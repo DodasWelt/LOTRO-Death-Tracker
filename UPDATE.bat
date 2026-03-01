@@ -43,17 +43,22 @@ echo ================================================================
 echo.
 
 REM Administrator-Rechte pruefen
+REM Zwei Methoden: net session kann auf manchen Systemen falsch-negativ reagieren
+REM (z.B. wenn der Windows-"Server"-Dienst deaktiviert ist).
 echo [%DATE% %TIME%] Pruefe Admin-Rechte... >> "%UPDATE_LOG%"
 net session >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [%DATE% %TIME%] FEHLER: Kein Admin (errorlevel=%errorLevel%) >> "%UPDATE_LOG%"
-    echo [FEHLER] Bitte als Administrator ausfuehren!
-    echo.
-    echo Rechtsklick auf UPDATE.bat - "Als Administrator ausfuehren"
-    echo.
-    pause
-    exit /b 1
-)
+if %errorLevel% equ 0 goto :admin_ok
+echo [%DATE% %TIME%] net session fehlgeschlagen, pruefe mit fsutil... >> "%UPDATE_LOG%"
+fsutil dirty query %systemdrive% >nul 2>&1
+if %errorLevel% equ 0 goto :admin_ok
+echo [%DATE% %TIME%] FEHLER: Kein Admin >> "%UPDATE_LOG%"
+echo [FEHLER] Bitte als Administrator ausfuehren!
+echo.
+echo Rechtsklick auf UPDATE.bat - "Als Administrator ausfuehren"
+echo.
+pause
+exit /b 1
+:admin_ok
 echo [%DATE% %TIME%] Admin-Check OK >> "%UPDATE_LOG%"
 
 REM Pruefe ob eine bestehende Installation vorhanden ist
