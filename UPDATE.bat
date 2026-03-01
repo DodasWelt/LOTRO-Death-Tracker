@@ -186,7 +186,7 @@ echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 3: npm install (NODE_CMD=%NODE_CMD%) >> "%UPDATE_LOG%"
 cd /d "%CLIENT_PATH%"
 echo   - Installiere Pakete (kann 1-2 Minuten dauern)...
-call "%NPM_CMD%" install --silent --no-progress >nul 2>&1
+call "%NPM_CMD%" install --no-audit --no-fund >> "%UPDATE_LOG%" 2>&1
 if %errorLevel% equ 0 (
     echo OK - Pakete aktualisiert
     echo [%DATE% %TIME%] Schritt 3 OK >> "%UPDATE_LOG%"
@@ -194,7 +194,7 @@ if %errorLevel% equ 0 (
     echo [WARNUNG] npm install fehlgeschlagen - bestehende Pakete werden verwendet.
     echo [WARNUNG] Das Update wird trotzdem fortgesetzt.
     echo [WARNUNG] Falls Probleme auftreten: npm install manuell in %CLIENT_PATH% ausfuehren.
-    echo [%DATE% %TIME%] WARNUNG: npm install fehlgeschlagen (errorlevel=%errorLevel%) >> "%UPDATE_LOG%"
+    echo [%DATE% %TIME%] WARNUNG: npm install fehlgeschlagen - siehe Log fuer Details >> "%UPDATE_LOG%"
 )
 echo.
 
@@ -203,14 +203,17 @@ echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 4: Plugin-Update >> "%UPDATE_LOG%"
 cd /d "%~dp0"
 
-REM LOTRO-Pfad ermitteln (Registry → OneDrive → Standard → Manuell)
+REM LOTRO-Pfad ermitteln (Registry → OneDrive → Standard)
+REM Kein interaktiver Prompt - bei nicht gefundenem Pfad wird uebersprungen.
 set "LOTRO_PATH="
 set "DOCS_PATH="
+echo [%DATE% %TIME%] Schritt 4: Suche LOTRO-Pfad via Registry... >> "%UPDATE_LOG%"
 FOR /F "tokens=2*" %%A IN (
   'REG QUERY "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Personal 2^>nul'
 ) DO SET "DOCS_PATH=%%B"
 
 IF DEFINED DOCS_PATH (
+  echo [%DATE% %TIME%] Schritt 4: DOCS_PATH=%DOCS_PATH% >> "%UPDATE_LOG%"
   IF EXIST "%DOCS_PATH%\The Lord of the Rings Online" (
     SET "LOTRO_PATH=%DOCS_PATH%\The Lord of the Rings Online"
     GOTO :update_lotro_found
@@ -225,56 +228,43 @@ IF EXIST "%USERPROFILE%\Documents\The Lord of the Rings Online" (
   GOTO :update_lotro_found
 )
 
-REM Kein Pfad automatisch gefunden – manuelle Eingabe anfordern
-ECHO [WARNUNG] LOTRO-Verzeichnis wurde nicht automatisch gefunden.
-ECHO Bitte gib den Pfad manuell ein, z.B.:
-ECHO   C:\Users\DeinName\Documents\The Lord of the Rings Online
-ECHO (oder Enter zum Ueberspringen des Plugin-Updates)
-ECHO.
-SET /P "LOTRO_PATH=LOTRO-Pfad: "
-IF "%LOTRO_PATH%"=="" (
-    ECHO INFO - Plugin-Update uebersprungen.
-    GOTO :plugin_skipped
-)
-IF NOT EXIST "%LOTRO_PATH%" (
-    ECHO [FEHLER] Pfad existiert nicht - Plugin-Update wird uebersprungen.
-    GOTO :plugin_skipped
-)
+REM Kein Pfad gefunden - Plugin-Update ueberspringen (kein interaktiver Prompt)
+echo [%DATE% %TIME%] Schritt 4: LOTRO-Pfad nicht gefunden - uebersprungen >> "%UPDATE_LOG%"
+ECHO [WARNUNG] LOTRO-Verzeichnis nicht automatisch gefunden.
+ECHO [WARNUNG] Plugin-Update wird uebersprungen.
+ECHO [INFO] Plugin manuell kopieren nach:
+ECHO   Dokumente\The Lord of the Rings Online\Plugins\DodasWelt\
+ECHO   Quelle: %~dp0LOTRO-Plugin\DodasWelt\
+GOTO :plugin_skipped
 
 :update_lotro_found
+echo [%DATE% %TIME%] Schritt 4: LOTRO-Pfad gefunden: %LOTRO_PATH% >> "%UPDATE_LOG%"
 set "PLUGINS_PATH=%LOTRO_PATH%\Plugins"
 
 if not exist "%PLUGINS_PATH%\DodasWelt" (
+    echo [%DATE% %TIME%] Schritt 4: DodasWelt-Ordner nicht gefunden - uebersprungen >> "%UPDATE_LOG%"
     echo [WARNUNG] Plugin-Ordner nicht gefunden: %PLUGINS_PATH%\DodasWelt
-    echo Das Plugin wurde moeglicherweise woanders installiert.
-    echo.
-    echo Bitte gib den Pfad zum Plugins-Ordner ein (oder Enter zum Ueberspringen):
-    echo Beispiel: C:\Users\DeinName\Documents\The Lord of the Rings Online\Plugins
-    echo.
-    set /P "PLUGINS_PATH=Plugins-Pfad: "
-    if "%PLUGINS_PATH%"=="" (
-        echo INFO - Plugin-Update uebersprungen.
-        goto :plugin_skipped
-    )
-    if not exist "%PLUGINS_PATH%" (
-        echo [WARNUNG] Pfad existiert nicht - Plugin-Update wird uebersprungen.
-        goto :plugin_skipped
-    )
+    echo [WARNUNG] Plugin-Update wird uebersprungen.
+    echo [INFO] Plugin manuell kopieren:
+    echo   Quelle: %~dp0LOTRO-Plugin\DodasWelt\
+    echo   Ziel:   %PLUGINS_PATH%\DodasWelt\
+    goto :plugin_skipped
 )
 
+echo [%DATE% %TIME%] Schritt 4: Kopiere Plugin-Dateien... >> "%UPDATE_LOG%"
 copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker.plugin" "%PLUGINS_PATH%\DodasWelt\" >nul
 if %errorLevel% neq 0 (
-    echo [WARNUNG] DeathTracker.plugin konnte nicht kopiert werden.
-    echo [WARNUNG] Plugin-Update fehlgeschlagen. Manuell kopieren aus: LOTRO-Plugin\DodasWelt\
     echo [%DATE% %TIME%] WARNUNG: DeathTracker.plugin konnte nicht kopiert werden >> "%UPDATE_LOG%"
+    echo [WARNUNG] DeathTracker.plugin konnte nicht kopiert werden.
+    echo [WARNUNG] Manuell kopieren aus: %~dp0LOTRO-Plugin\DodasWelt\
     goto :autostart
 )
 if not exist "%PLUGINS_PATH%\DodasWelt\DeathTracker" mkdir "%PLUGINS_PATH%\DodasWelt\DeathTracker"
 copy /Y "LOTRO-Plugin\DodasWelt\DeathTracker\Main.lua" "%PLUGINS_PATH%\DodasWelt\DeathTracker\" >nul
 if %errorLevel% neq 0 (
-    echo [WARNUNG] Main.lua konnte nicht kopiert werden.
-    echo [WARNUNG] Plugin-Update fehlgeschlagen. Manuell kopieren aus: LOTRO-Plugin\DodasWelt\
     echo [%DATE% %TIME%] WARNUNG: Main.lua konnte nicht kopiert werden >> "%UPDATE_LOG%"
+    echo [WARNUNG] Main.lua konnte nicht kopiert werden.
+    echo [WARNUNG] Manuell kopieren aus: %~dp0LOTRO-Plugin\DodasWelt\DeathTracker\
     goto :autostart
 )
 echo OK - Plugin aktualisiert in: %PLUGINS_PATH%\DodasWelt
@@ -283,7 +273,7 @@ goto :autostart
 
 :plugin_skipped
 echo INFO - Plugin-Update uebersprungen.
-echo [%DATE% %TIME%] Schritt 4: Plugin-Update uebersprungen >> "%UPDATE_LOG%"
+echo [%DATE% %TIME%] Schritt 4 uebersprungen >> "%UPDATE_LOG%"
 
 :autostart
 echo.
