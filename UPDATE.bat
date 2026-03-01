@@ -141,15 +141,28 @@ echo [%DATE% %TIME%] Schritt 2 OK >> "%UPDATE_LOG%"
 echo.
 
 REM --- Node.js-Pfad ermitteln (auch im Admin-Kontext zuverlaessig) ---
-set "NODE_CMD=node"
-set "NPM_CMD=npm"
+REM npm wird immer direkt aus dem Verzeichnis von node.exe abgeleitet,
+REM nicht aus PATH - verhindert Konflikt mit lokalem npm in node_modules\.bin
+set "NODE_CMD="
+set "NPM_CMD="
 echo [%DATE% %TIME%] Suche Node.js... >> "%UPDATE_LOG%"
 where node >nul 2>&1
 if %errorLevel% equ 0 (
-    echo [%DATE% %TIME%] Node.js im PATH gefunden >> "%UPDATE_LOG%"
-    goto :node_ready
+    for /f "delims=" %%i in ('where node 2^>nul') do (
+        set "NODE_CMD=%%i"
+        set "NPM_CMD=%%~dpi\npm.cmd"
+        goto :node_found_in_path
+    )
 )
+goto :node_not_in_path
 
+:node_found_in_path
+if not exist "%NPM_CMD%" set "NPM_CMD=npm"
+echo [%DATE% %TIME%] Node.js im PATH: %NODE_CMD% >> "%UPDATE_LOG%"
+echo [%DATE% %TIME%] npm: %NPM_CMD% >> "%UPDATE_LOG%"
+goto :node_ready
+
+:node_not_in_path
 echo   - Node.js nicht im Admin-PATH, suche Installationspfade...
 if exist "%PROGRAMFILES%\nodejs\node.exe" (
     set "NODE_CMD=%PROGRAMFILES%\nodejs\node.exe"
@@ -185,6 +198,16 @@ echo [SCHRITT 3/5] Aktualisiere Node.js Pakete...
 echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 3: npm install (NODE_CMD=%NODE_CMD%) >> "%UPDATE_LOG%"
 cd /d "%CLIENT_PATH%"
+
+REM Defektes lokales npm aus node_modules entfernen (Ursache von MODULE_NOT_FOUND-Fehlern).
+REM node_modules\.bin\npm.cmd kann auf node_modules\npm\bin\npm-cli.js zeigen, das nicht
+REM mehr vorhanden ist. Da NPM_CMD jetzt den globalen npm-Pfad enthaelt, ist das unnoetig.
+if exist "%CLIENT_PATH%\node_modules\npm" (
+    echo   - Bereinige altes npm aus node_modules...
+    rd /s /q "%CLIENT_PATH%\node_modules\npm" >nul 2>&1
+    echo [%DATE% %TIME%] Schritt 3: node_modules\npm bereinigt >> "%UPDATE_LOG%"
+)
+
 echo   - Installiere Pakete (kann 1-2 Minuten dauern)...
 call "%NPM_CMD%" install --no-audit --no-fund >> "%UPDATE_LOG%" 2>&1
 if %errorLevel% equ 0 (
@@ -308,26 +331,17 @@ echo   - Pruefe ob Watcher laeuft (3 Sekunden)...
 timeout /t 3 /nobreak >nul
 tasklist /FI "IMAGENAME eq node.exe" /NH 2>nul | find "node.exe" >nul 2>&1
 if %errorLevel% neq 0 (
-    echo.
-    echo [FEHLER] Watcher laeuft nicht (node.exe nicht gefunden)!
-    echo.
-    echo Log gespeichert als: %UPDATE_LOG%
-    echo.
-    echo Fehler-Details:
-    echo ----------------------------------------------------------------
-    type "%UPDATE_LOG%"
-    echo ----------------------------------------------------------------
-    echo.
-    echo Bitte Watcher manuell starten in PowerShell (kein Admin):
-    echo.
-    echo   cd C:\LOTRO-Death-Tracker
-    echo   node install-autostart.js install
-    echo.
-    pause
-    exit /b 1
+    echo [WARNUNG] Watcher laeuft noch nicht (node.exe nicht im Task-Manager gefunden).
+    echo [WARNUNG] Moegliche Ursache: Antivirusprogramm (z.B. Kaspersky) hat node.exe blockiert.
+    echo [WARNUNG] Loesung: node.exe / C:\LOTRO-Death-Tracker in AV-Ausnahmen eintragen,
+    echo [WARNUNG] dann manuell starten in PowerShell (kein Admin):
+    echo [WARNUNG]   cd C:\LOTRO-Death-Tracker
+    echo [WARNUNG]   node install-autostart.js install
+    echo [%DATE% %TIME%] WARNUNG: node.exe nach Start nicht gefunden (AV-Blockade moeglich) >> "%UPDATE_LOG%"
+) else (
+    echo OK - Autostart konfiguriert und Watcher laeuft
+    echo [%DATE% %TIME%] Schritt 5 OK - Watcher laeuft >> "%UPDATE_LOG%"
 )
-echo OK - Autostart konfiguriert und Watcher laeuft
-echo [%DATE% %TIME%] Schritt 5 OK - Watcher laeuft >> "%UPDATE_LOG%"
 echo   Log gespeichert als: %UPDATE_LOG%
 echo.
 
