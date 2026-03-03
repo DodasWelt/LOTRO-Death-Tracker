@@ -1,7 +1,7 @@
-// LOTRO Death & Level Tracker - Client Component v2.1
+// LOTRO Death & Level Tracker - Client Component v2.3
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 2.1
+// Version: 2.3
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,7 +13,7 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '2.1',
+    version: '2.3',
     autoRestart: true,
     logFile: path.join(__dirname, 'client.log')
 };

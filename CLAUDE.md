@@ -217,9 +217,11 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 
 15. **`vbsDialog()` in `updater.js` — `windowsHide: false` ist absichtlich** — Der Updater wird zwar mit `windowsHide: true` gespawnt (läuft unsichtbar), aber `wscript.exe` für VBScript-MsgBox-Dialoge MUSS mit `windowsHide: false` aufgerufen werden. VBScript-Dialoge erscheinen trotzdem sichtbar, auch wenn der Elternprozess versteckt ist. Die temporäre VBS-Datei (`_upd_dlg.vbs`) wird mit `'latin1'`-Encoding geschrieben, damit deutsche Umlaute (Windows-1252) korrekt dargestellt werden. Rückgabewerte: 6=Ja (vbYes), 7=Nein (vbNo), 1=OK.
 
-16. **`goto`-basierte Kontrollstruktur in BAT-Dateien** — Multi-line `if (...) else (...)` Blöcke nach `call`-Befehlen können CMD dazu bringen, das Skript still abzubrechen (kein Fehlercode, kein Output). Deshalb: nach jedem `call` sofort `set "EC=%errorLevel%"` (noch VOR dem nächsten `echo`, da `echo` `%errorLevel%` zurücksetzt), dann `if "%EC%" neq "0" goto :error_label`. Dieses Muster ist in INSTALL.bat und UPDATE.bat konsequent durchgezogen.
+16. **Watcher Singleton-Lock (`watcher.pid`)** — `acquireLock()` wird als **erstes** nach den Log-Startmeldungen aufgerufen (vor `checkAndApplyUpdate()`). Liest PID aus `watcher.pid`; existiert die Datei und lebt der Prozess (`process.kill(pid, 0)` ohne Exception) → sofortiges `process.exit(0)`. Stale-Lock (ESRCH) → überschreiben. `releaseLock()` löscht die Datei nur wenn `pid === process.pid` (verhindert Race bei schnellem Neustart). Wird in SIGINT, SIGTERM und `process.on('exit', ...)` aufgerufen. Generiert in `createWatcherScript()` — keine Backtick-Template-Literals im Lock-Code verwenden (nur String-Konkatenation).
 
-17. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
+17. **`goto`-basierte Kontrollstruktur in BAT-Dateien** — Multi-line `if (...) else (...)` Blöcke nach `call`-Befehlen können CMD dazu bringen, das Skript still abzubrechen (kein Fehlercode, kein Output). Deshalb: nach jedem `call` sofort `set "EC=%errorLevel%"` (noch VOR dem nächsten `echo`, da `echo` `%errorLevel%` zurücksetzt), dann `if "%EC%" neq "0" goto :error_label`. Dieses Muster ist in INSTALL.bat und UPDATE.bat konsequent durchgezogen.
+
+18. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
 
 ---
 
@@ -366,18 +368,18 @@ StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/
 
 Bei jedem Release alle Versionsnummern synchron halten:
 
-| Datei/Feld | Nächster Release (v2.2) |
+| Datei/Feld | Nächster Release (v2.3) |
 |---|---|
-| PHP Plugin-Header `Version:` | `2.2` |
-| PHP `$db_version` | `'2.2'` (Test-Tabellen: kein Schema-Change an Prod-Tabellen, ggf. auf `'2.1'` lassen) |
-| `Client/package.json` `"version"` | `"2.2"` |
-| `Client/version.json.template` | `{ "version": "2.2" }` |
-| `Client/client.js` Header-Kommentar | `Version: 2.2` |
-| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.2` |
-| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.2"` |
-| Git-Tag | `v2.2` |
+| PHP Plugin-Header `Version:` | `2.3` |
+| PHP `$db_version` | `'2.1'` (kein Schema-Change in v2.3 — bleibt unverändert) |
+| `Client/package.json` `"version"` | `"2.3"` |
+| `Client/version.json.template` | `{ "version": "2.3" }` |
+| `Client/client.js` Header-Kommentar | `Version: 2.3` |
+| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.3` |
+| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.3"` |
+| Git-Tag | `v2.3` |
 
-> **Aktueller Stand (unveröffentlicht):** Code-Stand ist v2.2 (Thema 10 Test-Umgebung implementiert). Letzter GitHub-Release: v2.0. v2.1 und v2.2 noch nicht released.
+> **Aktueller Stand (unveröffentlicht):** Code-Stand ist v2.3 (Thema 11 Watcher Singleton-Lock implementiert). Letzter GitHub-Release: v2.0. v2.1–v2.3 noch nicht released.
 
 ## WordPress Plugin Auto-Update
 

@@ -1,6 +1,6 @@
 {
   "name": "lotro-event-tracker-client",
-  "version": "2.1",
+  "version": "2.3",
   "description": "LOTRO Death & Level Tracker - Client for monitoring and syncing events to Vercel API",
   "main": "client.js",
   "scripts": {

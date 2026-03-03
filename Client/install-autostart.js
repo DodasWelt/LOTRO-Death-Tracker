@@ -28,6 +28,7 @@ const LOG_PATH    = path.join(__dirname, 'watcher.log');
 const GITHUB_REPO = 'DodasWelt/LOTRO-Death-Tracker';
 const VERSION_FILE = path.join(__dirname, 'version.json');
 const UPDATER_PATH = path.join(__dirname, 'updater.js');
+const PID_FILE    = path.join(__dirname, 'watcher.pid');
 
 let clientProcess = null;
 let checkInterval = null;
@@ -37,6 +38,47 @@ function log(message) {
     const logMessage = \`[\${timestamp}] \${message}\\n\`;
     try {
         fs.appendFileSync(LOG_PATH, logMessage, 'utf8');
+    } catch (e) {}
+}
+
+// ── Singleton-Lock ─────────────────────────────────────────────────────────
+// Stellt sicher, dass nur eine Watcher-Instanz gleichzeitig laeuft.
+// Mehrere Instanzen wuerden mehrere Clients starten → doppelte Death-Events.
+
+function acquireLock() {
+    if (fs.existsSync(PID_FILE)) {
+        try {
+            var existingPid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
+            if (existingPid && existingPid !== process.pid) {
+                try {
+                    process.kill(existingPid, 0); // Signal 0: prueft nur ob Prozess lebt
+                    log('Watcher bereits aktiv (PID ' + existingPid + ') – beende diese Instanz.');
+                    process.exit(0);
+                } catch (e) {
+                    // ESRCH: Prozess existiert nicht mehr → Stale-Lock
+                    log('Stale PID-Lock (PID ' + existingPid + ') – wird ueberschrieben.');
+                }
+            }
+        } catch (e) {
+            log('PID-Lock lesen fehlgeschlagen: ' + e.message + ' – fahre fort.');
+        }
+    }
+    try {
+        fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
+        log('PID-Lock erstellt: ' + process.pid);
+    } catch (e) {
+        log('PID-Lock schreiben fehlgeschlagen: ' + e.message);
+    }
+}
+
+function releaseLock() {
+    try {
+        if (fs.existsSync(PID_FILE)) {
+            var pid = parseInt(fs.readFileSync(PID_FILE, 'utf8').trim(), 10);
+            if (pid === process.pid) {
+                fs.unlinkSync(PID_FILE);
+            }
+        }
     } catch (e) {}
 }
 
@@ -341,6 +383,9 @@ log('LOTRO Watcher gestartet');
 log('Ueberwacht: lotroclient64.exe & lotroclient.exe');
 log('=================================');
 
+// Singleton-Lock: verhindert mehrfachen Start (wuerde mehrere Clients → doppelte Events erzeugen)
+acquireLock();
+
 // Update-Check einmalig beim Start (laeuft asynchron im Hintergrund)
 checkAndApplyUpdate();
 
@@ -351,6 +396,7 @@ process.on('SIGINT', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
+    releaseLock();
     process.exit(0);
 });
 
@@ -358,8 +404,11 @@ process.on('SIGTERM', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
+    releaseLock();
     process.exit(0);
 });
+
+process.on('exit', releaseLock);
 `;
     
     fs.writeFileSync(WATCHER_JS, watcherContent, 'utf8');

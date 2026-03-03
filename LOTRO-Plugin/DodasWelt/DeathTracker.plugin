@@ -3,7 +3,7 @@
     <Information>
 		<Name>DeathTracker</Name>
 		<Author>DodasWelt</Author>
-		<Version>2.1</Version>
+		<Version>2.3</Version>
 		<Description>Tracks player deaths and level-ups for stream overlay integration.</Description>
     </Information>
     <Package>DodasWelt.DeathTracker.Main</Package>
