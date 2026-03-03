@@ -9,7 +9,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
-> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — 3-Perspektiven-Risikoanalyse inkl. v1.5→v2.1-Verteilungsrisiken.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken.
 
 ### Repository-Struktur
 
@@ -22,7 +22,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
 | `INSTALL.bat` | Erstinstallation für Streamer | Im Distributions-ZIP |
-| `UPDATE.bat` | Upgrade v1.5 → v2.1 für bestehende Nutzer | Im Distributions-ZIP |
+| `UPDATE.bat` | Upgrade v1.5 → v2.3 für bestehende Nutzer | Im Distributions-ZIP |
 
 ---
 
@@ -211,7 +211,7 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 
 12. **`UPDATE.bat` beendet ALLE `node.exe`** — `taskkill /F /IM node.exe /T` in Schritt 1 trifft nicht nur Watcher/Client, sondern jeden Node.js-Prozess auf dem PC. Danach startet `install-autostart.js install` den neuen Watcher sofort — Windows-Neustart ist nicht mehr erforderlich. Beim Modifizieren von UPDATE.bat darauf achten: `taskkill` läuft VOR dem Kopieren der Dateien (damit Datei-Handles freigegeben sind), `timeout /t 2` gibt Windows Zeit zur Aufräumung.
 
-13. **`UPDATE.bat` Node.js-Pfad im Admin-Kontext** — `node` ist bei benutzerweiten Installationen (nvm, User-Installer) nicht im Admin-PATH. UPDATE.bat erkennt Node.js daher aktiv: erst `where node`, dann Fallback auf `%PROGRAMFILES%\nodejs\node.exe` und `%USERPROFILE%\AppData\Local\Programs\node\node.exe`. Gefundener Pfad wird in `%NODE_CMD%`/`%NPM_CMD%` gespeichert; alle nachfolgenden Aufrufe nutzen diese Variablen. Nicht gefunden → klare Fehlermeldung mit manueller Anleitung + `pause`.
+13. **`UPDATE.bat`/`INSTALL.bat` Node.js-Pfad im Admin-Kontext** — `node` ist bei benutzerweiten Installationen (nvm, User-Installer) nicht im Admin-PATH. Beide BAT-Dateien erkennen Node.js aktiv: erst `where node`, dann Fallback auf `%PROGRAMFILES%\nodejs\node.exe` und `%USERPROFILE%\AppData\Local\Programs\node\node.exe`. Gefundener Pfad wird in `%NODE_CMD%`/`%NPM_CMD%` gespeichert; alle nachfolgenden Aufrufe nutzen diese Variablen. Nicht gefunden → `INSTALL.bat` öffnet Browser mit Node.js-Installer-URL + Neustart-Hinweis; `UPDATE.bat` zeigt manuelle Anleitung + `pause`.
 
 14. **`UPDATE.bat`/`INSTALL.bat` Logdatei bei `%~dp0`** — Das Log landet unter `%~dp0update.log` bzw. `%~dp0install.log` (= Verzeichnis der BAT-Datei), **nicht** in `%TEMP%`. Grund: `%TEMP%` zeigt im Admin-Kontext auf `C:\Windows\Temp`, nicht auf den Nutzer-Temp-Ordner. Die Logdatei wird weder bei Erfolg noch bei Fehler gelöscht. Schritt 3 (`npm install`) entfernt zuvor ein ggf. vorhandenes defektes `node_modules\npm`-Verzeichnis (Ursache für `MODULE_NOT_FOUND`-Fehler mit lokalem npm), bevor der globale `NPM_CMD` aufgerufen wird. Am Ende erscheint ein VBScript-Popup (`cscript //nologo`) zur Bestätigung — dieses blockt das Skript und ist sichtbar, auch wenn das CMD-Fenster sich danach schließt.
 
