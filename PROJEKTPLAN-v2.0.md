@@ -667,6 +667,64 @@ Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/cl
 
 ---
 
+## Thema 11 — Watcher Singleton-Lock (nur 1 Instanz erlaubt)
+
+**Ziel:** Verhindert, dass mehrere Watcher-Instanzen gleichzeitig laufen. Jede Watcher-Instanz startet unabhängig ihren eigenen `client.js`-Prozess — laufen zwei Watcher, werden zwei Clients gestartet, und jeder Tod wird doppelt an die API gesendet.
+
+### Problem
+
+`startClient()` prüft nur die lokale Variable `clientProcess`, nicht ob ein anderer Watcher-Prozess bereits einen Client gestartet hat. Szenarien, in denen mehrere Instanzen entstehen:
+
+- `install-autostart.js install` zweimal ausgeführt (spawnt neuen Watcher ohne zu prüfen ob bereits einer läuft)
+- Windows-Autostart VBS + manueller Start gleichzeitig
+- Auto-Update: alter Watcher nicht vollständig beendet, bevor `updater.js` → `install-autostart.js install` läuft
+
+### Lösung: PID-Lock-Datei
+
+Der generierte `lotro-watcher.js` (in `createWatcherScript()` in `install-autostart.js`) bekommt beim Start eine Lock-Datei-Prüfung:
+
+```js
+const PID_FILE = path.join(__dirname, 'watcher.pid');
+
+// Beim Start: Lock prüfen
+function acquireLock() {
+    if (fs.existsSync(PID_FILE)) {
+        const existingPid = parseInt(fs.readFileSync(PID_FILE, 'utf8'), 10);
+        try {
+            process.kill(existingPid, 0); // Prüfen ob Prozess noch lebt
+            log('Watcher läuft bereits (PID ' + existingPid + ') – beende diese Instanz.');
+            process.exit(0); // Stille Beendigung
+        } catch (e) {
+            // Stale-Lock (Prozess tot) → überschreiben
+            log('Stale PID-Lock gefunden (PID ' + existingPid + ') – wird überschrieben.');
+        }
+    }
+    fs.writeFileSync(PID_FILE, String(process.pid), 'utf8');
+}
+
+// Beim Exit: Lock löschen
+function releaseLock() {
+    try { fs.unlinkSync(PID_FILE); } catch (_) {}
+}
+
+process.on('exit', releaseLock);
+process.on('SIGINT', () => { releaseLock(); process.exit(0); });
+process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
+```
+
+**Randfall:** `process.kill(pid, 0)` wirft `EPERM` wenn der Prozess läuft, aber uns gehört — auf Windows passiert das nicht (kein Nutzer-/Prozess-Isolierung), aber falls doch: als "Prozess lebt" interpretieren.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/install-autostart.js` | `createWatcherScript()`: `acquireLock()` + `releaseLock()` + `process.on('exit', ...)` im generierten Watcher-Code |
+| `CLAUDE.md` | Kritischen Hinweis ergänzen |
+
+**Aufwand: Klein** — Änderung ausschließlich in `createWatcherScript()` innerhalb von `install-autostart.js`. Kein anderer Code betroffen.
+
+---
+
 ## Gesamtübersicht
 
 | # | Thema | Version | Aufwand | Status |
@@ -681,6 +739,7 @@ Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/cl
 | 8 | Versionierungsstrategie | 2.0 | **Klein** | ✅ implementiert |
 | 9 | Risikominimierung vor Release | 2.1 | **Mittel** | ✅ implementiert |
 | 10 | Test-Umgebung (Staging) | 2.2 | **Mittel** | ✅ implementiert |
+| 11 | Watcher Singleton-Lock | 2.3 | **Klein** | ⏳ geplant |
 
-**Release von v2.0/v2.1 ist freigegeben (Thema 9 abgeschlossen).**
-**Thema 10 wird mit dem nächsten Release (v2.2) ausgeliefert.**
+**Release von v2.0/v2.1/v2.2 ist freigegeben (Themen 1–10 abgeschlossen, Code auf v2.2-Stand).**
+**Thema 11 wird mit dem nächsten Release (v2.3) ausgeliefert.**
