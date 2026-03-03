@@ -207,3 +207,21 @@ Die Auflösung ist 1920 (Breite) x 1080 (Höhe)
 ## ❓ Bei Fragen oder es funktioniert etwas nicht
 
 Melde dich via Discord bei Doda
+
+---
+
+## 🔧 Problemlösung
+
+### Watcher startet nach einem Absturz nicht mehr
+
+**Symptom:** LOTRO läuft, aber Death Tracker erkennt keine Tode mehr. In `C:\LOTRO-Death-Tracker\watcher.log` steht `Watcher bereits aktiv (PID X)` — obwohl kein zweiter Watcher im Task-Manager sichtbar ist.
+
+**Ursache:** Der Watcher wurde unerwartet beendet (z.B. durch einen Systemabsturz oder `taskkill`), ohne seine Lock-Datei zu bereinigen.
+
+**Lösung:**
+1. Datei `C:\LOTRO-Death-Tracker\watcher.pid` löschen
+2. Dann: Windows neu starten **oder** manuell in einer Eingabeaufforderung:
+   ```
+   cd C:\LOTRO-Death-Tracker
+   npm run install-service
+   ```

@@ -19,6 +19,16 @@ Vorgänger-Analyse: `RISIKOANALYSE-v2.0.md` (v2.1-Analyse + v1.5→v2.1-Verteilu
 | INSTALL.bat: vollständig überarbeitet | `INSTALL.bat` | Geringere Installations-Fehlerrate |
 | Versions-Sprung: v2.1 → v2.3 (v2.2 nie released) | alle Versionsdateien | Erster Auto-Update aus v2.0 → v2.3 |
 
+## Nachträgliche Fixes (nach Risikoanalyse, vor v2.3-Release)
+
+| Fix | Dateien | Behebt |
+|---|---|---|
+| `acquireLock()`: `spawnSync('tasklist')` prüft ob PID zu `node.exe` gehört | `install-autostart.js` (Watcher-Template) | **P1-E** ↓ auf 🟢 Gering |
+| `install()`: `watcher.pid` wird vor Spawn des neuen Watchers gelöscht | `install-autostart.js` | **P2-E** ↓ auf 🟢 Gering |
+| `updater.js`: `process.execPath` statt `'node'`; `npm.cmd` aus node-Verzeichnis abgeleitet | `updater.js` | **P2-A** ↓ Mitigationen verstärkt |
+| `updater.js`: Verifikation ob `lotro-watcher.js` nach Install vorhanden ist | `updater.js` | **P2-A** stille Fehler sichtbar |
+| Troubleshooting-Abschnitt für PID-Lock in Anleitung | `ANLEITUNG.md` | **P1-E** Selbstheilung dokumentiert |
+
 ---
 
 ## Gelöste Risiken aus v2.1-Analyse
@@ -41,14 +51,12 @@ Der Singleton-Lock erkennt beim Start einen bereits laufenden Watcher und beende
 - **Wahrscheinlichkeit:** Mittel — Enums wurden nicht in-game verifiziert.
 - **Empfehlung:** Einmalig in-game je einen Charakter jedes Volks prüfen.
 
-**P1-E — Singleton-Lock: Watcher startet nach hartem Crash nicht (PID-Wiederverwendung)**
-Wenn der Watcher durch ein Hard-Kill (`taskkill /F` ohne Signal-Handler) beendet wird und danach zufällig ein anderer Windows-Prozess dieselbe PID bekommt, erkennt `acquireLock()` den fremden Prozess als "lebenden Watcher" und beendet sich.
+**~~P1-E — Singleton-Lock: Watcher startet nach hartem Crash nicht (PID-Wiederverwendung)~~ — BEHOBEN**
+`acquireLock()` prüft jetzt via `spawnSync('tasklist')` ob die gespeicherte PID tatsächlich zu einem `node.exe`-Prozess gehört. Gehört sie einem fremden Prozess, wird der Lock als Stale behandelt und überschrieben. Nur wenn `node.exe` mit dieser PID läuft, beendet sich der neue Watcher.
 
-- **Auswirkung:** Watcher startet nicht. Kein Client, keine Events. `watcher.log` enthält "Watcher bereits aktiv (PID X)".
-- **Erkennung:** Watcher läuft nicht obwohl LOTRO gestartet wurde. Log-Eintrag erklärt den Grund.
-- **Wahrscheinlichkeit:** Sehr gering — Windows vergibt PIDs nicht sofort wieder; der Zeitraum zwischen Hard-Kill und erneutem Watcher-Start ist typischerweise Sekunden (Windows-Startup, VBS), nicht Millisekunden.
-- **Behebbarkeit:** `watcher.pid` manuell aus `C:\LOTRO-Death-Tracker\` löschen, dann Watcher neu starten. Dokumentation in der Anleitung empfohlen.
-- **Alternative Behebung:** `npm run install-service` erneut ausführen (schreibt neuen Watcher und startet ihn, PID-Datei wird neu geschrieben).
+- **Restrisiko:** Verschwindend gering — erfordert, dass ein anderer `node.exe`-Prozess zufällig genau die PID des alten Watchers erbt. In der Praxis nicht relevant.
+- **Selbstheilung dokumentiert:** ANLEITUNG.md enthält nun einen Troubleshooting-Abschnitt: `watcher.pid` löschen → `npm run install-service`.
+- **Bewertung:** 🟢 Gering (vorher: 🟡 Mittel)
 
 ### 🟢 Geringes Risiko
 
@@ -83,17 +91,23 @@ Wenn zwei Watcher-Prozesse exakt gleichzeitig starten (beide lesen `watcher.pid`
 
 ### 🟡 Mittleres Risiko
 
-**P2-A — Auto-Update erstmals mit echtem GitHub-Release ungetestet** *(aktualisiert)*
-Der vollständige Update-Zyklus (Watcher erkennt neuen Tag, lädt Dateien, Staging, Rename, Updater-Spawn) wurde noch nicht mit einem echten `v2.3`-Release gegen eine reale `v2.0`-Installation durchgespielt. Zusätzlich erfolgt hier erstmals ein Sprung über mehrere Versionsstufen (v2.0 → v2.3).
+**P2-A — Auto-Update erstmals mit echtem GitHub-Release ungetestet** *(aktualisiert, Mitigationen verstärkt)*
+Der vollständige Update-Zyklus wurde noch nicht mit einem echten `v2.3`-Release gegen eine reale `v2.0`-Installation durchgespielt.
 
-- **Auswirkung bei Fehler:** URL-Validierung fängt die meisten Fälle ab. Staging-Mechanismus verhindert inkonsistente Zustände. Watcher läuft im schlimmsten Fall auf v2.0 weiter.
+Neue Code-Mitigationen seit Risikoanalyse:
+- `updater.js` verwendet `process.execPath` statt `'node'` → kein PATH-Problem auch in nicht-Standard-Umgebungen
+- `npm.cmd` wird aus dem Verzeichnis von `node.exe` abgeleitet (analog zu UPDATE.bat) → kein Admin-PATH-Problem
+- Nach `install-autostart.js install` wird geprüft ob `lotro-watcher.js` tatsächlich erstellt wurde → stille Fehler werden sichtbar
+
+- **Auswirkung bei Fehler:** URL-Validierung, Staging-Mechanismus und jetzt Verifikationscheck verhindern inkonsistente Zustände. Watcher läuft im schlimmsten Fall auf v2.0 weiter.
+- **Bewertung:** 🟡 Mittel (unverändert — Code-Verbesserungen reduzieren Wahrscheinlichkeit, aber ein echter Test bleibt empfohlen)
 - **Empfehlung:** Nach v2.3-Release `watcher.log` auf einer v2.0-Installation beobachten.
 
-**P2-E — `watcher.pid` muss bei neuen Watcher-Typen oder Installation mitgedacht werden**
-Wenn zukünftig `install-autostart.js install` ohne vorheriges `taskkill` ausgeführt wird (z.B. in Tests), könnte ein vorhandener `watcher.pid` den neuen Watcher sofort beenden. `install-autostart.js install` stellt sicher, dass `watcher.pid` **nach** dem Spawn des neuen Watchers existiert. Wenn `install-autostart.js install` mehrfach aufgerufen wird (z.B. durch UPDATE.bat auf einem laufenden System), besteht dieses Timing-Risiko.
+**~~P2-E — `watcher.pid` muss bei neuen Watcher-Typen oder Installation mitgedacht werden~~ — BEHOBEN**
+`install-autostart.js install()` löscht jetzt `watcher.pid` **vor** dem Spawn des neuen Watchers. Damit ist sichergestellt, dass kein Stale-Lock aus einem früheren Lauf den neuen Watcher blockiert — auch wenn `install-autostart.js install` ohne vorheriges `taskkill` aufgerufen wird.
 
-- **Auswirkung:** Neuer Watcher erkennt sich selbst oder den frisch gespawnten Prozess als Konkurrenten — da `acquireLock()` erst nach `log('=================================')` aufgerufen wird, und der neue Spawn erst nach `process.exit(0)` des install-autostart-Prozesses gestartet ist, ist das Fenster sehr klein.
-- **Empfehlung:** In `UPDATE.bat` und `INSTALL.bat` wird `taskkill /F /IM node.exe /T` VOR `install-autostart.js install` ausgeführt — damit ist kein laufender Watcher mehr vorhanden wenn der neue gestartet wird. Dieses Muster muss bei zukünftigen BAT-Änderungen beibehalten werden.
+- **Verbleibende Empfehlung:** `UPDATE.bat` und `INSTALL.bat` führen `taskkill /F /IM node.exe /T` weiterhin VOR `install-autostart.js install` aus (wichtig damit Datei-Handles freigegeben sind). Dieses Muster muss bei zukünftigen BAT-Änderungen beibehalten werden.
+- **Bewertung:** 🟢 Gering (vorher: 🟡 Mittel)
 
 ### 🟢 Geringes Risiko
 
@@ -148,15 +162,15 @@ Der `DELETE /test/clear`-Endpoint ist durch WordPress Basic Auth (Application Pa
 
 ## Gesamtbewertung v2.3
 
-| Perspektive | Mittleres Risiko | Geringes Risiko | Behoben in v2.3 |
+| Perspektive | Mittleres Risiko | Geringes Risiko | Behoben |
 |---|---|---|---|
-| **Streamer** | Race/Class-Enums (P1-A), Singleton-Lock PID-Reuse (P1-E) | Event-Verlust (P1-B), AV-Block (P1-C), Pfadänderung (P1-D), Lock Race Condition (P1-F) | Doppelter Watcher (P2-C) ✅ |
-| **Entwickler** | Auto-Update erstmals ungetestet (P2-A), Lock + BAT-Reihenfolge (P2-E) | DB-Spalte ohne Fallback (P2-B), Versionssynchronität (P2-D), Beschädigte PID-Datei (P2-F) | — |
+| **Streamer** | Race/Class-Enums (P1-A) | Event-Verlust (P1-B), AV-Block (P1-C), Pfadänderung (P1-D), ~~PID-Reuse (P1-E)~~ ✅, Lock Race Condition (P1-F) | Doppelter Watcher (P2-C) ✅, PID-Reuse (P1-E) ✅ |
+| **Entwickler** | Auto-Update erstmals ungetestet (P2-A, verstärkte Mitigationen) | DB-Spalte ohne Fallback (P2-B), Versionssynchronität (P2-D), Beschädigte PID-Datei (P2-F), ~~Lock + BAT-Reihenfolge (P2-E)~~ ✅ | P2-E ✅ |
 | **Infrastruktur** | — | GitHub/WP/SE-Ausfälle (P3-A–E), jsDelivr veraltet (P3-F), Test-Cleanup vergessen (P3-G), Test-Credentials (P3-H) | — |
 
-**Fazit:** Die einzige neue Risikokategorie durch v2.3 ist der Singleton-Lock selbst (P1-E, P1-F, P2-E, P2-F). Alle Lock-Risiken sind gering bis sehr gering — P1-E (PID-Wiederverwendung) ist das einzige mit praktischer Auswirkung und selbstbehebbar (Lock-Datei löschen). **P2-C (Doppelter Watcher) ist vollständig behoben.**
+**Fazit nach nachträglichen Fixes:** P1-E (PID-Wiederverwendung) und P2-E (Mehrfachinstallation ohne taskkill) sind vollständig behoben. P2-A (ungetesteter Auto-Update) bleibt das einzige mittlere Risiko — der Code ist jetzt robuster (PATH-unabhängige Node/npm-Pfade, Post-Install-Verifikation), aber ein echter Test-Durchlauf bleibt die abschließende Bestätigung.
 
-**Release v2.3 ist bereit.** Empfehlung vor breiter Verteilung: P1-A (Race/Class-Enums) und P2-A (Auto-Update-Ablauf) einmalig in Echtbetrieb verifizieren.
+**Release v2.3 ist bereit.** Einzige Empfehlung vor breiter Verteilung: P1-A (Race/Class-Enums) und P2-A (Auto-Update-Ablauf) einmalig in Echtbetrieb verifizieren.
 
 ---
 

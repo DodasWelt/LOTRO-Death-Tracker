@@ -11,6 +11,12 @@ const fs = require('fs');
 const dir = __dirname;
 const newVersion = process.argv[2] || '0';
 
+// npm-Pfad aus node.exe-Verzeichnis ableiten (laeuft auch wenn node nicht im Admin-PATH ist)
+const npmCmd = (function() {
+    const c = path.join(path.dirname(process.execPath), 'npm.cmd');
+    return fs.existsSync(c) ? c : 'npm';
+})();
+
 function log(msg) {
     try {
         fs.appendFileSync(
@@ -142,7 +148,7 @@ setTimeout(function() {
         // Schritt 1: npm-Pakete aktualisieren
         log('Installiere Pakete...');
         try {
-            execSync('npm install --silent --no-progress', { cwd: dir, windowsHide: true });
+            execSync('"' + npmCmd + '" install --silent --no-progress', { cwd: dir, windowsHide: true });
             log('Pakete installiert.');
         } catch (e) {
             log('npm install Fehler: ' + e.message);
@@ -153,8 +159,13 @@ setTimeout(function() {
         // Schritt 2: Watcher + Autostart neu generieren und starten
         log('Konfiguriere Autostart neu...');
         try {
-            execSync('node install-autostart.js install', { cwd: dir, windowsHide: true });
+            execSync('"' + process.execPath + '" install-autostart.js install', { cwd: dir, windowsHide: true });
             log('Autostart konfiguriert und Watcher gestartet.');
+            // Verifizieren dass lotro-watcher.js erzeugt wurde
+            if (!fs.existsSync(path.join(dir, 'lotro-watcher.js'))) {
+                log('Warnung: lotro-watcher.js fehlt nach install-autostart.js install');
+                errors.push('lotro-watcher.js nicht erstellt – Autostart moeglicherweise unvollstaendig');
+            }
         } catch (e) {
             log('install-autostart Fehler: ' + e.message);
             errors.push('Autostart-Konfiguration fehlgeschlagen: ' + e.message.trim().split('\n')[0]);

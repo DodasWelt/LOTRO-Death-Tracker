@@ -18,7 +18,7 @@ const SHORTCUT_PATH = path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 // Erstelle Watcher-Script
 function createWatcherScript() {
     const watcherContent = `// LOTRO Watcher - Startet Client nur wenn LOTRO läuft
-const { exec, spawn } = require('child_process');
+const { exec, spawn, spawnSync } = require('child_process');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
@@ -52,8 +52,21 @@ function acquireLock() {
             if (existingPid && existingPid !== process.pid) {
                 try {
                     process.kill(existingPid, 0); // Signal 0: prueft nur ob Prozess lebt
-                    log('Watcher bereits aktiv (PID ' + existingPid + ') – beende diese Instanz.');
-                    process.exit(0);
+                    // Pruefen ob der Prozess tatsaechlich node.exe ist (PID-Wiederverwendungs-Schutz).
+                    // Windows kann PIDs wiederverwenden; ein fremder Prozess soll den Watcher nicht blockieren.
+                    var isNodeProc = false;
+                    try {
+                        var tc = spawnSync('tasklist', ['/FI', 'PID eq ' + existingPid, '/FO', 'CSV', '/NH'], { windowsHide: true, encoding: 'utf8' });
+                        if (tc.stdout && tc.stdout.toLowerCase().indexOf('node.exe') !== -1) {
+                            isNodeProc = true;
+                        }
+                    } catch (tce) {}
+                    if (isNodeProc) {
+                        log('Watcher bereits aktiv (PID ' + existingPid + ') – beende diese Instanz.');
+                        process.exit(0);
+                    } else {
+                        log('PID ' + existingPid + ' gehoert nicht zu node.exe (PID-Wiederverwendung?) – Lock wird ueberschrieben.');
+                    }
                 } catch (e) {
                     // ESRCH: Prozess existiert nicht mehr → Stale-Lock
                     log('Stale PID-Lock (PID ' + existingPid + ') – wird ueberschrieben.');
@@ -480,7 +493,14 @@ function install() {
         console.log('');
         console.log('🚀 Starte Watcher JETZT im Hintergrund...');
         console.log('');
-        
+
+        // Stale PID-Lock entfernen – verhindert sofortigen Exit des neuen Watchers
+        // bei Mehrfachaufruf ohne vorheriges taskkill (P2-E)
+        const pidFilePath = path.join(__dirname, 'watcher.pid');
+        if (fs.existsSync(pidFilePath)) {
+            try { fs.unlinkSync(pidFilePath); } catch (e) {}
+        }
+
         // Starte Watcher sofort im Hintergrund
         const { spawn } = require('child_process');
         const watcher = spawn(process.execPath, [WATCHER_JS], {
