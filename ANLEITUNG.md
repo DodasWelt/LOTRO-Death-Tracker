@@ -10,7 +10,7 @@
 2. [Wichtig vor dem Start: ZIP und BAT-Datei entsperren](#wichtig-vor-dem-start-zip-und-bat-datei-entsperren)
 3. [Voraussetzungen](#voraussetzungen)
 4. [Installation - Automatisch](#installation-automatisch)
-5. [Update von Version 1.5 auf 2.0](#update-von-version-15-auf-20)
+5. [Update von Version 1.5 auf 2.4](#update-von-version-15-auf-24)
 6. [Plugin im Spiel laden](#plugin-im-spiel-laden)
 7. [StreamElements Overlay einrichten](#streamelements-overlay-einrichten)
 

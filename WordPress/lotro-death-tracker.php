@@ -848,7 +848,7 @@ class LOTRO_Death_Tracker {
         return rest_ensure_response(array(
             'success'        => true,
             'status'         => 'online',
-            'version'        => '2.1',
+            'version'        => '2.4',
             'queueLength'    => $queue_count,
             'totalDeaths'    => $total_deaths,
             'characters'     => $character_count,

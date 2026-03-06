@@ -351,6 +351,9 @@ grep -h "<Version>" LOTRO-Plugin/DodasWelt/DeathTracker.plugin
 grep -h "Installierte Version:" INSTALL.bat UPDATE.bat
 grep -h "v2\." INSTALL.bat UPDATE.bat
 grep -m1 "^\*\*Version" ANLEITUNG.md
+grep -h "Version:" Website/lotro-data-fetcher.js
+grep -h "@v2\." Website/lotro-data-fetcher.js CLAUDE.md
+grep -h "'version'" WordPress/lotro-death-tracker.php
 ```
 → Alle ausgegebenen Versionsnummern müssen `X.Y` sein. Erst wenn das stimmt, weitermachen.
 
@@ -429,7 +432,11 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `UPDATE.bat` Header-Echo (`UPDATE AUF VERSION`) | auf `X.Y` setzen |
 | `UPDATE.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
 | `UPDATE.bat` Popup-Text (`MsgBox`) | auf `vX.Y` setzen |
-| `ANLEITUNG.md` Versionsnummer im Titel + Update-Abschnitt | auf `X.Y` setzen |
+| `ANLEITUNG.md` Versionsnummer im Titel, TOC-Eintrag + Update-Abschnitt | auf `X.Y` setzen |
+| `Website/lotro-data-fetcher.js` Header-Kommentar `Version:` | auf `X.Y` setzen |
+| `Website/lotro-data-fetcher.js` CDN-URL im Header-Kommentar (`@vX.Y`) | auf `vX.Y` setzen |
+| `WordPress/lotro-death-tracker.php` Health-Endpoint `'version'` | auf `X.Y` setzen |
+| `CLAUDE.md` CDN-Einbindungs-Beispiel (`@vX.Y`) | auf `vX.Y` setzen |
 | Git-Tag | `vX.Y` |
 
 > **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.4** (released 2026-03-06).
@@ -445,9 +452,9 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.3/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.4/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.3` → `@v2.4` (usw.) im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.4` → `@v2.5` (usw.) im Script-Tag aktualisieren.
 
 ---
 
