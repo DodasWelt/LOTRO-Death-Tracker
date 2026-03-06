@@ -406,7 +406,7 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `ANLEITUNG.md` Versionsnummer im Titel + Update-Abschnitt | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand ist **v2.4** (implementiert, noch nicht released). Letzter GitHub-Release: **v2.3** (2026-03-03).
+> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.4** (released 2026-03-06).
 
 ## WordPress Plugin Auto-Update
 
