@@ -9,7 +9,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
-> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen.
 
 ### Repository-Struktur
 
@@ -365,8 +365,17 @@ gh release create vX.Y \
   LOTRO-Death-Tracker-vX.Y.zip \
   lotro-death-tracker.zip
 
+# 4b. Als latest markieren (PFLICHT – immer nach gh release create UND nach Pre-Release → Release!)
+gh release edit vX.Y --latest
+
 # 5. Aufräumen
 rm -rf LOTRO-Death-Tracker-vX.Y lotro-death-tracker
+```
+
+**Pre-Release → regulärer Release** (nach erfolgreichem Test):
+```bash
+gh release edit vX.Y --prerelease=false
+gh release edit vX.Y --latest
 ```
 
 ### LOTRO-Pfad-Erkennung (INSTALL.bat, UPDATE.bat, client.js)
