@@ -7,6 +7,7 @@
 const { execSync, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const dir = __dirname;
 const newVersion = process.argv[2] || '0';
@@ -182,6 +183,74 @@ setTimeout(function() {
             log('version.json Fehler: ' + e.message);
             errors.push('version.json konnte nicht geschrieben werden: ' + e.message.trim().split('\n')[0]);
         }
+
+        // Schritt 4: LOTRO Plugin-Dateien aktualisieren
+        (function() {
+            function getLOTROPath() {
+                if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
+                try {
+                    var out = execSync(
+                        'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders" /v Personal',
+                        { windowsHide: true, encoding: 'utf8' }
+                    );
+                    var m = out.match(/Personal\s+REG_SZ\s+(.+)/);
+                    if (m) {
+                        var p = path.join(m[1].trim(), 'The Lord of the Rings Online');
+                        if (fs.existsSync(p)) return p;
+                    }
+                } catch (_) {}
+                var od = path.join(os.homedir(), 'OneDrive', 'Documents', 'The Lord of the Rings Online');
+                if (fs.existsSync(od)) return od;
+                return path.join(os.homedir(), 'Documents', 'The Lord of the Rings Online');
+            }
+
+            function downloadFileSync(url, dest) {
+                var r = spawnSync('powershell.exe', [
+                    '-NoProfile', '-NonInteractive', '-Command',
+                    'Invoke-WebRequest -Uri \'' + url + '\' -OutFile \'' + dest + '\' -UseBasicParsing'
+                ], { windowsHide: true, timeout: 30000 });
+                if (r.status !== 0) {
+                    throw new Error('HTTP-Fehler' + (r.stderr ? ': ' + r.stderr.toString().trim().split('\n')[0] : ''));
+                }
+            }
+
+            log('Aktualisiere LOTRO-Plugin-Dateien...');
+            var lotroPath = getLOTROPath();
+            if (!fs.existsSync(lotroPath)) {
+                log('LOTRO-Pfad nicht gefunden (' + lotroPath + ') – Plugin-Update uebersprungen.');
+                errors.push('LOTRO-Plugin nicht aktualisiert: Installationspfad nicht gefunden');
+                return;
+            }
+
+            var pluginDir = path.join(lotroPath, 'Plugins', 'DodasWelt', 'DeathTracker');
+            var pluginRootDir = path.join(lotroPath, 'Plugins', 'DodasWelt');
+            try { fs.mkdirSync(pluginDir, { recursive: true }); } catch (_) {}
+
+            var base = 'https://raw.githubusercontent.com/DodasWelt/LOTRO-Death-Tracker/v' + newVersion;
+            var pluginFiles = [
+                { url: base + '/LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua',
+                  dest: path.join(pluginDir, 'Main.lua') },
+                { url: base + '/LOTRO-Plugin/DodasWelt/DeathTracker.plugin',
+                  dest: path.join(pluginRootDir, 'DeathTracker.plugin') }
+            ];
+
+            var pluginErr = null;
+            pluginFiles.forEach(function(f) {
+                if (pluginErr) return;
+                try {
+                    downloadFileSync(f.url, f.dest);
+                    log('Plugin-Datei aktualisiert: ' + path.basename(f.dest));
+                } catch (e) {
+                    pluginErr = e;
+                    log('Plugin-Download fehlgeschlagen (' + path.basename(f.dest) + '): ' + e.message);
+                    errors.push('LOTRO-Plugin nicht aktualisiert (' + path.basename(f.dest) + '): ' + e.message.trim().split('\n')[0]);
+                }
+            });
+
+            if (!pluginErr) {
+                log('LOTRO-Plugin-Dateien erfolgreich aktualisiert.');
+            }
+        })();
 
         log('Update auf v' + newVersion + (errors.length ? ' mit Fehlern' : '') + ' abgeschlossen!');
 

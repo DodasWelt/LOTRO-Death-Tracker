@@ -725,6 +725,412 @@ process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
 
 ---
 
+## Thema 12 — Plugin-Dateien im Auto-Update mitaktualisieren
+
+**Ziel:** Der Updater aktualisiert beim Auto-Update nicht nur die 4 Node.js-Client-Dateien, sondern auch die LOTRO-Plugin-Lua-Dateien (`Main.lua`, `DeathTracker.plugin`) — vollautomatisch, ohne manuellen Eingriff des Nutzers.
+
+### Problem
+
+Das aktuelle Auto-Update-System lädt nur:
+- `client.js`, `install-autostart.js`, `package.json`, `updater.js`
+
+Die Lua-Plugin-Dateien in `Dokumente\The Lord of the Rings Online\Plugins\DodasWelt\` werden **nicht** aktualisiert. Sie verbleiben auf dem Stand der letzten manuellen Installation (z. B. v2.1 nach INSTALL.bat), auch wenn eine neue Version auf GitHub liegt. Folge: Die im Spiel angezeigte Plugin-Version bleibt veraltet; bei zukünftigen Plugin-Funktionsänderungen fehlen dem Nutzer Features.
+
+### Lösung
+
+`updater.js` übernimmt den Plugin-Update nach `node install-autostart.js install`:
+
+1. **LOTRO-Pfad erkennen** — `getLOTROPath()`-Logik aus `client.js` in `updater.js` duplizieren (~20 Zeilen, kein gemeinsames Modul nötig):
+   ```js
+   function getLOTROPath() {
+       if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
+       // Schritt 1: Registry
+       try {
+           const out = require('child_process').execSync(
+               'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders" /v Personal',
+               { windowsHide: true, encoding: 'utf8' }
+           );
+           const m = out.match(/Personal\s+REG_SZ\s+(.+)/);
+           if (m) { const p = path.join(m[1].trim(), 'The Lord of the Rings Online'); if (fs.existsSync(p)) return p; }
+       } catch (_) {}
+       // Schritt 2: OneDrive
+       const od = path.join(os.homedir(), 'OneDrive', 'Documents', 'The Lord of the Rings Online');
+       if (fs.existsSync(od)) return od;
+       // Schritt 3: Standard
+       return path.join(os.homedir(), 'Documents', 'The Lord of the Rings Online');
+   }
+   ```
+
+2. **Plugin-Dateien laden** — 2 Raw-GitHub-URLs, gleiche `downloadRaw()`-Logik wie im Watcher:
+   ```
+   https://raw.githubusercontent.com/DodasWelt/LOTRO-Death-Tracker/v{version}/LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua
+   https://raw.githubusercontent.com/DodasWelt/LOTRO-Death-Tracker/v{version}/LOTRO-Plugin/DodasWelt/DeathTracker.plugin
+   ```
+
+3. **In Plugin-Verzeichnis kopieren:**
+   ```js
+   const pluginsDir = path.join(lotroPath, 'Plugins', 'DodasWelt');
+   // Main.lua → pluginsDir/DeathTracker/Main.lua
+   // DeathTracker.plugin → pluginsDir/DeathTracker.plugin
+   ```
+   Verzeichnis anlegen falls nicht vorhanden (`fs.mkdirSync(..., { recursive: true })`).
+
+4. **Fehlerbehandlung:** Pfad nicht gefunden oder Download fehlgeschlagen → Warnung in `errors[]` (Abschluss-Dialog zeigt Hinweis), aber **nicht fatal** — Client-Update gilt trotzdem als erfolgreich.
+
+### Warum kein separates Staging für Plugin-Dateien?
+
+Die Plugin-Dateien liegen in einem anderen Verzeichnis als die Client-Dateien. Dort gibt es kein `update-staging/`. Da es nur 2 Dateien sind und kein laufender Prozess darauf zugreift (LOTRO ist beim Update gestoppt), ist direktes Überschreiben ausreichend — das Risiko eines Halbzustands ist minimal. Bei Fehler: nächster Update-Versuch korrigiert es.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/updater.js` | `getLOTROPath()` hinzufügen; nach `install-autostart.js install` Plugin-Dateien laden + kopieren; Fehler in `errors[]` |
+| `CLAUDE.md` | Updater-Ablauf + Hinweis 15 aktualisieren |
+
+**Aufwand: Klein** — Pfaderkennung ist bereits in `client.js` vorhanden und kann direkt übernommen werden. Die Download-Logik folgt dem gleichen Muster wie im Watcher. Kein neues Staging-System nötig.
+
+**Offene Entscheidungen:**
+- Soll das Plugin-Update auch im Abschluss-Dialog explizit als Erfolg/Warnung angezeigt werden (separater Punkt in der Meldung)?
+
+---
+
+## Thema 13 — Client-Crash-Restart via Watcher-Loop (Bug Fix)
+
+**Ziel:** Ein `client.js`-Crash führt zu einem sauberen externen Neustart durch `lotro-watcher.js` statt zu einem internen Neustart, der einen zweiten chokidar-Watcher erzeugt und alle Tode doppelt sendet.
+
+### Problem
+
+`client.js` hat `autoRestart: true` → bei uncaughtException ruft es `main()` erneut auf, **ohne den alten chokidar-Watcher zu schließen**. Gleichzeitig hat der generierte `lotro-watcher.js` keinen `'exit'`-Listener auf `clientProcess` → erkennt den Crash nicht (`clientProcess.killed` bleibt `false`).
+
+Resultat: Zwei chokidar-Instanzen laufen auf derselben Datei → jede Dateiänderung erzeugt **zwei** Death-Events → doppelte Einträge in der DB.
+
+### Lösung
+
+In `createWatcherScript()` in `install-autostart.js`: nach `clientProcess.unref()` einen Exit-Listener hinzufügen:
+
+```javascript
+clientProcess.on('exit', function(code) {
+    log('Client beendet (Code: ' + code + ').');
+    clientProcess = null;  // Ermöglicht Neustart durch checkLOTRO-Loop
+});
+```
+
+Der Watcher-Loop (`checkLOTRO` alle 5 s) setzt den Client danach automatisch neu auf — sauber, ohne doppelten Watcher.
+
+In `client.js`: `autoRestart: false` setzen. Der externe Watcher übernimmt den Restart vollständig.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/install-autostart.js` | `createWatcherScript()` → `startClient()`: Exit-Listener nach `unref()` |
+| `Client/client.js` | `CONFIG.autoRestart = false` |
+
+**Aufwand: Klein**
+
+---
+
+## Thema 14 — Staging Rename-Backup (Bug Fix)
+
+**Ziel:** Ein fehlgeschlagener `renameSync` während des Auto-Updates löscht keine Produktionsdateien unwiederbringlich.
+
+### Problem
+
+```javascript
+if (fs.existsSync(f.dest)) fs.unlinkSync(f.dest);  // Alte Datei gelöscht
+fs.renameSync(stagingPath, f.dest);                  // Falls das fehlschlägt...
+```
+
+Wenn `renameSync` nach `unlinkSync` scheitert (z. B. AV-Scanner-Lock), ist die Produktionsdatei weg. Bei Datei 2 von 4 fehlt danach `install-autostart.js` komplett.
+
+### Lösung — Backup-Rename-Pattern
+
+```javascript
+const backupPath = f.dest + '.bak';
+try {
+    if (fs.existsSync(f.dest)) fs.renameSync(f.dest, backupPath);  // Backup
+    fs.renameSync(stagingPath, f.dest);                              // Neue Datei
+    try { fs.unlinkSync(backupPath); } catch (_) {}                 // Backup löschen
+} catch (e) {
+    renameErr = e;
+    if (fs.existsSync(backupPath) && !fs.existsSync(f.dest)) {
+        try { fs.renameSync(backupPath, f.dest); } catch (_) {}     // Restore
+    }
+    log('Rename fehlgeschlagen (' + f.name + '): ' + e.message);
+}
+```
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/install-autostart.js` | `createWatcherScript()` → Rename-Loop in `checkAndApplyUpdate()` |
+
+**Aufwand: Klein**
+
+---
+
+## Thema 15 — Versionsstrings & WP-Plugin User-Agent (Bug Fix)
+
+**Ziel:** Erfolgsmeldungen der BAT-Dateien zeigen die korrekte Version. WP-Plugin sendet beim GitHub-API-Request die Plugin-Version, nicht die DB-Version.
+
+### Änderungen
+
+| Datei | Zeile | Alt | Neu |
+|---|---|---|---|
+| `INSTALL.bat` | 319 | `Installierte Version: 2.0` | `Installierte Version: 2.4` |
+| `UPDATE.bat` | 338 | `Installierte Version: 2.0` | `Installierte Version: 2.4` |
+| `ANLEITUNG.md` | 3 | `**Version 2.0**` | `**Version 2.4**` |
+| `ANLEITUNG.md` | 137 | `auf Version 2.0 aktualisieren` | `auf Version 2.4 aktualisieren` |
+| `lotro-death-tracker.php` | 202 | `'User-Agent' => '...' . $this->db_version` | `'User-Agent' => 'LOTRO-Death-Tracker-WP/2.4'` |
+
+> Dauerhafter Prozess: Diese Strings bei jedem Release-Bump aktualisieren (in CLAUDE.md Versionstabelle als Pflichtfelder aufnehmen).
+
+**Aufwand: Minimal**
+
+---
+
+## Thema 16 — Overlay `isChecking`-Flag (Verbesserung)
+
+**Ziel:** `checkForDeaths()` wird nicht parallel von `setInterval` und `setTimeout` aufgerufen.
+
+### Problem
+
+`setInterval` (alle 3 s) + `setTimeout(500 ms)` nach `skipDeath()` können gleichzeitig `checkForDeaths()` starten → doppelter Skip-Call möglich.
+
+### Lösung
+
+```javascript
+let isChecking = false;
+async function checkForDeaths() {
+    if (isChecking) return;
+    isChecking = true;
+    try {
+        // ... bestehender Code unverändert ...
+    } finally {
+        isChecking = false;
+    }
+}
+```
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Overlay/streamelements-overlay-minimalist.html` | `isChecking`-Flag um `checkForDeaths()` |
+| `Overlay/streamelements-overlay-test.html` | identisch |
+
+**Aufwand: Minimal**
+
+---
+
+## Thema 17 — Lokales Tod-Tracking & stiller DB-Abgleich
+
+**Ziel:** `client.js` führt eine lokale Zähldatei, die mit der Datenbank abgeglichen wird. Fehlende Tode (z. B. wegen Plugin-Fehler) werden lautlos nachgetragen — ohne Overlay-Animation.
+
+### Hintergrund
+
+Das LOTRO-Plugin hat in der Vergangenheit gelegentlich Tode nicht erkannt (Plugin nicht geladen, Initialisierungsfehler). Diese wurden bisher manuell in der Datenbank nachgetragen (nur `total_deaths` erhöht, kein Queue-Eintrag). Ziel ist, diesen Abgleich automatisch und rückwirkungsfrei zu machen.
+
+### Warum das Plugin die Quelle der Wahrheit sein muss
+
+Das Hauptszenario für fehlende Tode: das Plugin lief im Spiel, `client.js` war aber nicht gestartet. Nur das Plugin hat den Tod erkannt — client.js hat gar keine Chance gehabt, etwas zu sehen. Die einzige Quelle die immer stimmt, ist das Plugin selbst.
+
+### Plugin: Persistenter Todes-Zähler
+
+`Main.lua` führt einen neuen persistenten Zähler `totalDeathsTrackedLocally` in einer **separaten** PluginData-Datei (`DeathTracker_State`). Diese Datei wird bei jedem Tod inkrementiert und über alle Sessions hinweg akkumuliert — unabhängig davon ob client.js läuft oder nicht.
+
+```lua
+-- Bei Plugin-Initialisierung: laden oder auf 0 setzen
+DeathTracker.State = Turbine.PluginData.Load(
+    Turbine.DataScope.Character, "DeathTracker_State") or {}
+DeathTracker.State.totalDeathsTrackedLocally =
+    DeathTracker.State.totalDeathsTrackedLocally or 0
+
+-- Bei jedem bestätigten Tod (zusätzlich zum bestehenden Sync-Write):
+DeathTracker.State.totalDeathsTrackedLocally =
+    DeathTracker.State.totalDeathsTrackedLocally + 1
+Turbine.PluginData.Save(
+    Turbine.DataScope.Character, "DeathTracker_State", DeathTracker.State)
+```
+
+Pfad der State-Datei: `[LotroPath]/PluginData/[Server]/[Character]/DeathTracker_State.plugindata`
+
+### Watcher: Referenzpaar + Abgleich
+
+Der Watcher liest beim Start alle vorhandenen `DeathTracker_State.plugindata`-Dateien (ein Scan über alle Server/Charakter-Verzeichnisse) und vergleicht mit der Datenbank.
+
+**Lokale Referenzdatei:** `C:\LOTRO-Death-Tracker\deaths.local.json`
+
+```json
+{
+  "characters": {
+    "Inge": {
+      "baselinePlugin": 40,
+      "baselineServer": 40,
+      "firstSeenAt": "2026-03-06T11:00:00"
+    }
+  }
+}
+```
+
+**Abgleich-Logik (`syncLocalDeaths()`):**
+
+```
+Für jeden Charakter in DeathTracker_State.plugindata:
+
+  Falls Charakter NEU (nicht in deaths.local.json):
+    → GET /characters → serverCount
+    → pluginCount = aus DeathTracker_State lesen
+    → Speichern: { baselinePlugin: pluginCount, baselineServer: serverCount }
+    → Kein Nachtragen (Referenzpunkt ist jetzt gesetzt)
+
+  Falls Charakter BEKANNT:
+    → currentPlugin = aus DeathTracker_State lesen
+    → currentServer = GET /characters → total_deaths
+    → expectedDelta = currentPlugin - baselinePlugin
+    → actualDelta   = currentServer - baselineServer
+    → missing = expectedDelta - actualDelta
+    → Falls missing > 0: POST /death/silent { count: missing, ... }
+    → Log: "[Charakter]: N fehlende Tode nachgetragen"
+```
+
+### "Ohne Animation" — wie technisch?
+
+Nachgetragene Tode werden mit **`processed = 1` + `shown_at = NOW()`** in `wp_lotro_deaths` eingetragen. Das Overlay fragt `/death/current` nur nach `processed = 0` → sieht diese nie → keine Animation. `total_deaths` in `wp_lotro_characters` wird korrekt erhöht.
+
+Nachgetragene Tode sind in der vollständigen History sichtbar (Statistiken, Website), aber nie im Overlay animiert.
+
+Neuer API-Endpoint:
+
+```
+POST /wp-json/lotro-deaths/v1/death/silent
+Body: { "characterName": "...", "count": 2, "level": 50, "race": "...", "characterClass": "..." }
+Effekt: N Einträge in wp_lotro_deaths (processed=1, shown_at=NOW()); total_deaths += N
+```
+
+### Abgleich-Trigger
+
+**Watcher-seitig**, nach Update-Check, vor LOTRO-Check-Loop:
+
+```
+Watcher startet
+  → acquireLock()
+  → checkAndApplyUpdate()     ← erst Update
+  → syncLocalDeaths()         ← dann Abgleich
+  → setInterval(checkLOTRO, 5000)
+```
+
+Wenn Server beim Abgleich nicht erreichbar: still überspringen, Log-Eintrag. Beim nächsten Watcher-Start erneut versuchen. Kein Fehler-Dialog.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `LOTRO-Plugin/Main.lua` | `DeathTracker_State.plugindata` führen: `totalDeathsTrackedLocally` persistieren |
+| `Client/install-autostart.js` | `createWatcherScript()`: `syncLocalDeaths()` nach Update-Check; PluginData-Verzeichnis scannen |
+| `WordPress/lotro-death-tracker.php` | Neuer Endpoint `POST /death/silent` |
+| `CLAUDE.md` | API-Dokumentation + kritischer Hinweis |
+
+**Aufwand: Mittel–Groß** (Lua-Änderung + PluginData-Scan + neuer API-Endpoint)
+
+---
+
+## Thema 18 — Periodischer Update-Check während LOTRO läuft
+
+**Ziel:** Updates werden auch erkannt und installiert, wenn LOTRO bereits läuft — nicht nur beim nächsten Windows-Neustart.
+
+### Hintergrund
+
+Der aktuelle Update-Check läuft **einmalig beim Watcher-Start**. Wenn ein Release erscheint, während LOTRO gerade geöffnet ist, bekommt der Nutzer das Update erst beim nächsten Neustart (Windows oder manuell).
+
+### Trigger-Logik
+
+Zwei Trigger, beide aktiv:
+
+1. **LOTRO-Start-Trigger:** Wenn `checkLOTRO()` einen Zustandswechsel `nicht laufend → laufend` erkennt → einmaliger Update-Check (nicht bei jedem Tick, nur beim Übergang)
+
+2. **Zeitbasierter Trigger:** Alle 3 Stunden zu festen Tageszeiten (0:00, 3:00, 6:00, 9:00, 12:00, 15:00, 18:00, 21:00 Uhr). Der Watcher berechnet beim Start die nächste Überprüfungszeit und setzt ein `setTimeout` dafür.
+
+### Ablauf bei erkanntem Update
+
+```
+Update verfügbar (LOTRO läuft) → Dialog Stufe 1:
+
+  "Update v2.X verfügbar!
+   Wenn Sie jetzt installieren, wird LOTRO automatisch beendet."
+  [Jetzt installieren]  [Später erinnern]
+
+  → [Jetzt installieren]:
+      → taskkill lotroclient64.exe + lotroclient.exe (windowsHide: true)
+      → stopClient() (client.js beenden)
+      → normaler Update-Flow: Download → Staging → Rename → Updater spawnen → Watcher beendet sich
+
+  → [Später erinnern] → Dialog Stufe 2:
+
+    "Wann möchten Sie erinnert werden?"
+    [In 3 Stunden]  [Beim nächsten LOTRO-Start]
+
+    → [In 3 Stunden]:
+        → pendingUpdate-Flag setzen + Zeitpunkt merken
+        → beim nächsten 3h-Tick: erneut Dialog Stufe 1 zeigen
+    → [Beim nächsten LOTRO-Start]:
+        → remindOnNextLotroStart-Flag setzen
+        → beim nächsten Zustandswechsel nicht-laufend → laufend: Dialog zeigen
+```
+
+**Technische Umsetzung — drei Buttons via zwei VBScript-Dialoge:**
+
+VBScript MsgBox unterstützt keine drei benutzerdefinierten Button-Labels. Daher zwei sequenzielle Dialoge (bewährtes Muster aus `updater.js`). Rückgabe-Codes werden wie bisher genutzt (vbYes=6, vbNo=7).
+
+### Abgrenzung zum bestehenden Update-Flow
+
+Der bestehende `checkAndApplyUpdate()` beim Watcher-Start läuft weiterhin — wenn LOTRO **nicht** läuft, wird direkt (ohne Dialog) aktualisiert wie bisher. Dialog erscheint **nur** wenn LOTRO beim Zeitpunkt des Update-Checks aktiv ist.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/install-autostart.js` | `createWatcherScript()`: Zustandswechsel-Erkennung in `checkLOTRO()`; zeitbasierter 3h-Check; `checkForUpdateInteractive()`; zwei VBScript-Dialoge; `taskkill`-Flow; Reminder-Flags |
+
+**Aufwand: Mittel**
+
+---
+
+## Thema 19 — watcher.log Lokalzeit statt UTC
+
+**Ziel:** Alle Zeitstempel im `watcher.log` zeigen die lokale Systemzeit des Nutzers statt UTC.
+
+### Problem
+
+Aktuell: `new Date().toISOString()` → `2026-03-06T10:00:00.000Z` (UTC). Auf einem PC mit CET (UTC+1) steht im Log eine Stunde hinter der Realzeit. Das erschwert die Fehlersuche und kann beim manuellen Abgleich von Log-Zeitstempel vs. Release-Zeitpunkt verwirren.
+
+### Lösung
+
+```javascript
+function formatLocalTime(d) {
+    const pad = (n, w) => String(n).padStart(w || 2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' +
+           pad(d.getMilliseconds(), 3);
+}
+// Beispiel: 2026-03-06T11:00:00.513 (ohne Z-Suffix = klar als Lokalzeit erkennbar)
+```
+
+Diese Funktion ersetzt `new Date().toISOString()` in der `log()`-Funktion des generierten Watcher-Scripts und in `client.js`.
+
+### Betroffene Komponenten
+
+| Komponente | Änderung |
+|---|---|
+| `Client/install-autostart.js` | `createWatcherScript()` → `log()`-Funktion: `formatLocalTime()` statt `toISOString()` |
+| `Client/client.js` | `log()`-Funktion: identische Änderung |
+
+**Aufwand: Minimal**
+
+---
+
 ## Gesamtübersicht
 
 | # | Thema | Version | Aufwand | Status |
@@ -739,7 +1145,14 @@ process.on('SIGTERM', () => { releaseLock(); process.exit(0); });
 | 8 | Versionierungsstrategie | 2.0 | **Klein** | ✅ implementiert |
 | 9 | Risikominimierung vor Release | 2.1 | **Mittel** | ✅ implementiert |
 | 10 | Test-Umgebung (Staging) | 2.2 | **Mittel** | ✅ implementiert |
-| 11 | Watcher Singleton-Lock | 2.3 | **Klein** | ⏳ geplant |
+| 11 | Watcher Singleton-Lock | 2.3 | **Klein** | ✅ implementiert |
+| 12 | Plugin-Dateien im Auto-Update | 2.4 | **Klein** | ⏳ geplant |
+| 13 | Client-Crash-Restart via Watcher | 2.4 | **Klein** | ⏳ geplant |
+| 14 | Staging Rename-Backup | 2.4 | **Klein** | ⏳ geplant |
+| 15 | Versionsstrings & WP-Plugin User-Agent | 2.4 | **Minimal** | ⏳ geplant |
+| 16 | Overlay isChecking-Flag | 2.4 | **Minimal** | ⏳ geplant |
+| 17 | Lokales Tod-Tracking & stiller DB-Abgleich | 2.4 | **Mittel** | ⏳ geplant |
+| 18 | Periodischer Update-Check (In-Game) | 2.4 | **Mittel** | ⏳ geplant |
+| 19 | watcher.log Lokalzeit | 2.4 | **Minimal** | ⏳ geplant |
 
-**Release von v2.0/v2.1/v2.2 ist freigegeben (Themen 1–10 abgeschlossen, Code auf v2.2-Stand).**
-**Thema 11 wird mit dem nächsten Release (v2.3) ausgeliefert.**
+**Aktueller Stand: v2.3 released (2026-03-03). Themen 12–19 sind für v2.4 geplant.**

@@ -22,19 +22,31 @@ const { exec, spawn, spawnSync } = require('child_process');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
-const CLIENT_PATH = '${CLIENT_PATH.replace(/\\/g, '\\\\')}';
-const LOG_PATH    = path.join(__dirname, 'watcher.log');
-const GITHUB_REPO = 'DodasWelt/LOTRO-Death-Tracker';
-const VERSION_FILE = path.join(__dirname, 'version.json');
-const UPDATER_PATH = path.join(__dirname, 'updater.js');
-const PID_FILE    = path.join(__dirname, 'watcher.pid');
+const CLIENT_PATH      = '${CLIENT_PATH.replace(/\\/g, '\\\\')}';
+const LOG_PATH         = path.join(__dirname, 'watcher.log');
+const GITHUB_REPO      = 'DodasWelt/LOTRO-Death-Tracker';
+const VERSION_FILE     = path.join(__dirname, 'version.json');
+const UPDATER_PATH     = path.join(__dirname, 'updater.js');
+const PID_FILE         = path.join(__dirname, 'watcher.pid');
+const LOCAL_DEATHS_FILE = path.join(__dirname, 'deaths.local.json');
+const WP_API           = 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1';
 
 let clientProcess = null;
 let checkInterval = null;
+var prevLotroRunning = false;
+var remindOnNextStart = false;
+
+function formatLocalTime(d) {
+    var pad = function(n, w) { return String(n).padStart(w || 2, '0'); };
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' +
+           pad(d.getMilliseconds(), 3);
+}
 
 function log(message) {
-    const timestamp = new Date().toISOString();
+    const timestamp = formatLocalTime(new Date());
     const logMessage = \`[\${timestamp}] \${message}\\n\`;
     try {
         fs.appendFileSync(LOG_PATH, logMessage, 'utf8');
@@ -154,6 +166,172 @@ function downloadRaw(rawUrl, destPath, cb) {
     get(rawUrl, 0);
 }
 
+// ── Lokales Tod-Tracking & stiller DB-Abgleich ───────────────────────────────
+// Laedt beim Watcher-Start persistente Todes-Zaehler aus den Lua-PluginData-Dateien
+// und gleicht diese mit der Datenbank ab. Fehlende Tode (z.B. Client nicht gestartet)
+// werden still nachgetragen (processed=1, kein Overlay).
+
+function getLotroPath() {
+    var lotroDir = 'The Lord of the Rings Online';
+    if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
+    try {
+        var r = spawnSync('reg', ['query', 'HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders', '/v', 'Personal'], { windowsHide: true, encoding: 'utf8' });
+        var m = (r.stdout || '').match(/Personal\\s+REG_SZ\\s+(.+)/);
+        if (m) { var p = path.join(m[1].trim(), lotroDir); if (fs.existsSync(p)) return p; }
+    } catch (_) {}
+    var od = path.join(os.homedir(), 'OneDrive', 'Documents', lotroDir);
+    if (fs.existsSync(od)) return od;
+    return path.join(os.homedir(), 'Documents', lotroDir);
+}
+
+function findStateFiles(lotroPath) {
+    var pluginDataDir = path.join(lotroPath, 'PluginData');
+    if (!fs.existsSync(pluginDataDir)) return [];
+    var results = [];
+    try {
+        fs.readdirSync(pluginDataDir).forEach(function(server) {
+            try {
+                fs.readdirSync(path.join(pluginDataDir, server)).forEach(function(charName) {
+                    var stateFile = path.join(pluginDataDir, server, charName, 'DeathTracker_State.plugindata');
+                    if (fs.existsSync(stateFile)) {
+                        results.push({ file: stateFile, charName: charName });
+                    }
+                });
+            } catch (_) {}
+        });
+    } catch (_) {}
+    return results;
+}
+
+function parseStateFile(filePath) {
+    try {
+        var content = fs.readFileSync(filePath, 'utf8');
+        var m = content.match(/\\["totalDeathsTrackedLocally"\\]\\s*=\\s*([\\d.]+)/);
+        return m ? Math.floor(parseFloat(m[1])) : 0;
+    } catch (_) { return 0; }
+}
+
+function loadLocalDeaths() {
+    try { return JSON.parse(fs.readFileSync(LOCAL_DEATHS_FILE, 'utf8')); } catch (_) { return { characters: {} }; }
+}
+
+function saveLocalDeaths(data) {
+    try { fs.writeFileSync(LOCAL_DEATHS_FILE, JSON.stringify(data, null, 2), 'utf8'); } catch (e) {
+        log('deaths.local.json konnte nicht gespeichert werden: ' + e.message);
+    }
+}
+
+function httpsPostJSON(urlStr, body, cb) {
+    var bodyStr = JSON.stringify(body);
+    var parsed = new URL(urlStr);
+    var req = https.request({
+        hostname: parsed.hostname,
+        path: parsed.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr), 'User-Agent': 'LOTRO-Death-Tracker-Watcher' }
+    }, function(res) {
+        var data = '';
+        var statusCode = res.statusCode;
+        res.on('data', function(c) { data += c; });
+        res.on('end', function() { try { cb(null, JSON.parse(data), statusCode); } catch (e) { cb(e, null, statusCode); } });
+    });
+    req.on('error', cb);
+    req.setTimeout(15000, function() { req.destroy(); cb(new Error('Timeout')); });
+    req.write(bodyStr);
+    req.end();
+}
+
+function syncLocalDeaths() {
+    var lotroPath = getLotroPath();
+    if (!fs.existsSync(lotroPath)) {
+        log('syncLocalDeaths: LOTRO-Pfad nicht gefunden – uebersprungen.');
+        return;
+    }
+    var stateFiles = findStateFiles(lotroPath);
+    if (stateFiles.length === 0) {
+        log('syncLocalDeaths: Keine DeathTracker_State-Dateien gefunden (Plugin noch nicht gestartet?).');
+        return;
+    }
+    log('syncLocalDeaths: ' + stateFiles.length + ' Charakter(e) gefunden – pruefe Datenbank...');
+
+    var localDeaths = loadLocalDeaths();
+    var idx = 0;
+
+    function processNext() {
+        if (idx >= stateFiles.length) return;
+        var entry = stateFiles[idx++];
+        var charName = entry.charName;
+        var currentPlugin = parseStateFile(entry.file);
+
+        https.get(WP_API + '/characters', { headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' } }, function(res) {
+            var data = '';
+            res.on('data', function(c) { data += c; });
+            res.on('end', function() {
+                var parsed;
+                try { parsed = JSON.parse(data); } catch (e) {
+                    log('syncLocalDeaths: Ungueltige API-Antwort – uebersprungen.');
+                    processNext();
+                    return;
+                }
+                if (!parsed || !parsed.success) {
+                    log('syncLocalDeaths: API-Fehler – uebersprungen.');
+                    processNext();
+                    return;
+                }
+                var chars = parsed.characters || [];
+                var charData = null;
+                var charNameNorm = charName.toLowerCase().trim();
+                for (var i = 0; i < chars.length; i++) {
+                    if ((chars[i].characterName || '').toLowerCase().trim() === charNameNorm) { charData = chars[i]; break; }
+                }
+                var currentServer = charData ? parseInt(charData.totalDeaths, 10) : 0;
+
+                if (!localDeaths.characters[charName]) {
+                    localDeaths.characters[charName] = {
+                        baselineServer: currentServer,
+                        firstSeenAt: new Date().toISOString()
+                    };
+                    saveLocalDeaths(localDeaths);
+                    log('syncLocalDeaths [' + charName + ']: Baseline gesetzt (Server: ' + currentServer + ', Plugin: ' + currentPlugin + ').');
+                    processNext();
+                    return;
+                }
+
+                var baselineServer = localDeaths.characters[charName].baselineServer;
+                var missing = currentPlugin - (currentServer - baselineServer);
+                if (missing <= 0) {
+                    log('syncLocalDeaths [' + charName + ']: Alles synchron (Plugin: ' + currentPlugin + ', Server: ' + currentServer + ', Baseline: ' + baselineServer + ').');
+                    processNext();
+                    return;
+                }
+
+                log('syncLocalDeaths [' + charName + ']: ' + missing + ' fehlende Tode werden nachgetragen...');
+                var postBody = {
+                    characterName: charName,
+                    count: missing,
+                    level: charData ? parseInt(charData.currentLevel, 10) : 0,
+                    race: charData ? (charData.race || '') : '',
+                    characterClass: charData ? (charData.characterClass || '') : ''
+                };
+                httpsPostJSON(WP_API + '/death/silent', postBody, function(postErr, result, statusCode) {
+                    if (postErr || !result || !result.success) {
+                        var errMsg = postErr ? postErr.message : JSON.stringify(result);
+                        if (statusCode === 404) errMsg += ' (WordPress-Plugin v2.4 benoetigt – bitte WP-Plugin aktualisieren)';
+                        log('syncLocalDeaths [' + charName + ']: Nachtragen fehlgeschlagen: ' + errMsg);
+                    } else {
+                        log('syncLocalDeaths [' + charName + ']: ' + result.inserted + ' Tode nachgetragen.');
+                    }
+                    processNext();
+                });
+            });
+        }).on('error', function(e) {
+            log('syncLocalDeaths: Netzwerkfehler – uebersprungen: ' + e.message);
+        });
+    }
+
+    processNext();
+}
+
 function checkAndApplyUpdate() {
     const currentVersion = getCurrentVersion();
     log('Update-Check (installiert: v' + currentVersion + ')...');
@@ -204,32 +382,12 @@ function checkAndApplyUpdate() {
 
             const base = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/';
 
-            // URL-Vorab-Validierung: prüfe ob der Tag auf raw.githubusercontent.com erreichbar ist
-            log('Validiere Update-URL...');
-            const validationPath = '/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/version.json.template';
-            const headReq = https.request({
-                hostname: 'raw.githubusercontent.com',
-                path: validationPath,
-                method: 'HEAD',
-                headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' }
-            }, function(headRes) {
-                headRes.resume();
-                if (headRes.statusCode !== 200) {
-                    log('URL-Validierung fehlgeschlagen (HTTP ' + headRes.statusCode + ') – Update abgebrochen');
-                    return;
-                }
-                startDownload(base, remoteVersion, stagingDir);
-            });
-            let headTimedOut = false;
-            headReq.on('error', function(e) {
-                if (!headTimedOut) log('URL-Validierung: ' + e.message + ' – Update abgebrochen');
-            });
-            headReq.setTimeout(10000, function() {
-                headTimedOut = true;
-                headReq.destroy();
-                log('URL-Validierung: Timeout – Update abgebrochen');
-            });
-            headReq.end();
+            var lotroNowRunning = isLOTRORunningSync();
+            if (lotroNowRunning) {
+                handleUpdateDialog(base, remoteVersion, stagingDir);
+            } else {
+                applyUpdateNow(base, remoteVersion, stagingDir);
+            }
         });
     });
 
@@ -237,6 +395,116 @@ function checkAndApplyUpdate() {
     req.on('error', function(e) { if (!reqTimedOut) log('Update-Check: ' + e.message + ' – uebersprungen'); });
     req.setTimeout(15000, function() { reqTimedOut = true; log('Update-Check: Timeout – uebersprungen'); req.destroy(); });
     req.end();
+}
+
+function applyUpdateNow(base, remoteVersion, stagingDir) {
+    log('Validiere Update-URL...');
+    const validationPath = '/' + GITHUB_REPO + '/v' + remoteVersion + '/Client/version.json.template';
+    const headReq = https.request({
+        hostname: 'raw.githubusercontent.com',
+        path: validationPath,
+        method: 'HEAD',
+        headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' }
+    }, function(headRes) {
+        headRes.resume();
+        if (headRes.statusCode !== 200) {
+            log('URL-Validierung fehlgeschlagen (HTTP ' + headRes.statusCode + ') – Update abgebrochen');
+            return;
+        }
+        startDownload(base, remoteVersion, stagingDir);
+    });
+    let headTimedOut = false;
+    headReq.on('error', function(e) {
+        if (!headTimedOut) log('URL-Validierung: ' + e.message + ' – Update abgebrochen');
+    });
+    headReq.setTimeout(10000, function() {
+        headTimedOut = true;
+        headReq.destroy();
+        log('URL-Validierung: Timeout – Update abgebrochen');
+    });
+    headReq.end();
+}
+
+// Synchroner LOTRO-Check (nur fuer Update-Dialog – blockiert kurz den Event-Loop)
+function isLOTRORunningSync() {
+    var exes = ['lotroclient64.exe', 'lotroclient.exe'];
+    for (var i = 0; i < exes.length; i++) {
+        try {
+            var r = spawnSync('tasklist', ['/FI', 'IMAGENAME eq ' + exes[i], '/NH'], { windowsHide: true, encoding: 'utf8' });
+            if (r.stdout && r.stdout.toLowerCase().indexOf(exes[i].toLowerCase().split('.')[0]) !== -1) return true;
+        } catch (_) {}
+    }
+    return false;
+}
+
+// Zeigt einen VBScript-Dialog synchron (blockiert bis Nutzer klickt).
+// buttons: 0=OK, 4=Ja/Nein. Rueckgabe: 6=Ja, 7=Nein, 1=OK, -1=Fehler.
+function showVbsDialog(lines, title, buttons) {
+    if (typeof lines === 'string') lines = [lines];
+    var msgExpr = lines.map(function(l) { return '"' + l.replace(/"/g, '') + '"'; }).join(' & vbCrLf & ');
+    var vbs = 'Dim r\\nr = MsgBox(' + msgExpr + ', ' + buttons + ', "' + title + '")\\nWScript.Quit r\\n';
+    var tmp = path.join(__dirname, '_watcher_dlg.vbs');
+    try { fs.writeFileSync(tmp, vbs, 'latin1'); } catch (e) { return -1; }
+    var res = spawnSync('wscript.exe', [tmp], { windowsHide: false, stdio: 'ignore' });
+    try { fs.unlinkSync(tmp); } catch (_) {}
+    return res.status;
+}
+
+function handleUpdateDialog(base, remoteVersion, stagingDir) {
+    var title = 'LOTRO Death Tracker Update';
+    log('Update-Dialog: LOTRO laeuft – zeige Nutzer-Dialog...');
+    var r1 = showVbsDialog([
+        'LOTRO Death Tracker Update v' + remoteVersion + ' verfuegbar!',
+        '',
+        'Herr der Ringe Online wird automatisch beendet, wenn Sie jetzt installieren.',
+        'Der Watcher pausiert kurz waehrend dieses Dialogs – Tode werden weiterhin aufgezeichnet.',
+        '',
+        '[Ja]  = Jetzt installieren',
+        '[Nein] = Spaeter erinnern'
+    ], title, 4);
+
+    if (r1 === 6) {
+        log('Nutzer: Jetzt installieren – beende LOTRO...');
+        spawnSync('taskkill', ['/F', '/IM', 'lotroclient64.exe', '/T'], { windowsHide: true });
+        spawnSync('taskkill', ['/F', '/IM', 'lotroclient.exe', '/T'], { windowsHide: true });
+        stopClient();
+        applyUpdateNow(base, remoteVersion, stagingDir);
+    } else {
+        var r2 = showVbsDialog([
+            'Wann soll an das Update erinnert werden?',
+            '',
+            '[Ja]  = In 3 Stunden (naechster 3h-Check)',
+            '[Nein] = Beim naechsten LOTRO-Start'
+        ], title + ' – Erinnerung', 4);
+
+        if (r2 !== 6) {
+            log('Nutzer: Erinnern beim naechsten LOTRO-Start.');
+            remindOnNextStart = true;
+        } else {
+            log('Nutzer: Erinnern beim naechsten 3h-Check.');
+            // Kein Flag noetig – der 3h-Scheduler ruft checkAndApplyUpdate() sowieso auf
+        }
+    }
+}
+
+function scheduleNext3hCheck() {
+    var now = new Date();
+    var hours = now.getHours();
+    var nextHour = Math.ceil((hours + 1) / 3) * 3;
+    var next = new Date(now);
+    next.setMinutes(0, 0, 0);
+    if (nextHour >= 24) {
+        next.setDate(next.getDate() + 1);
+        next.setHours(0);
+    } else {
+        next.setHours(nextHour);
+    }
+    var delay = next.getTime() - now.getTime();
+    log('Naechster periodischer Update-Check in ' + Math.round(delay / 60000) + ' Min. (um ' + next.getHours() + ':00 Uhr).');
+    setTimeout(function() {
+        checkAndApplyUpdate();
+        scheduleNext3hCheck();
+    }, delay);
 }
 
 function startDownload(base, remoteVersion, stagingDir) {
@@ -274,11 +542,16 @@ function startDownload(base, remoteVersion, stagingDir) {
             filesToDownload.forEach(function(f) {
                 if (renameErr) return;
                 const stagingPath = path.join(stagingDir, f.name);
+                const backupPath = f.dest + '.bak';
                 try {
-                    if (fs.existsSync(f.dest)) fs.unlinkSync(f.dest);
+                    if (fs.existsSync(f.dest)) fs.renameSync(f.dest, backupPath);
                     fs.renameSync(stagingPath, f.dest);
+                    try { fs.unlinkSync(backupPath); } catch (_) {}
                 } catch (e) {
                     renameErr = e;
+                    if (fs.existsSync(backupPath) && !fs.existsSync(f.dest)) {
+                        try { fs.renameSync(backupPath, f.dest); } catch (_) {}
+                    }
                     log('Rename fehlgeschlagen (' + f.name + '): ' + e.message);
                 }
             });
@@ -361,6 +634,10 @@ function startClient() {
     
     clientProcess.unref();
     log('Client gestartet (PID: ' + clientProcess.pid + ')');
+    clientProcess.on('exit', function(code) {
+        log('Client beendet (Code: ' + code + ') – Watcher startet ihn neu sobald LOTRO laeuft.');
+        clientProcess = null;
+    });
 }
 
 function stopClient() {
@@ -382,7 +659,17 @@ function stopClient() {
 function checkLOTRO() {
     isLOTRORunning((lotroRunning) => {
         const clientRunning = clientProcess && !clientProcess.killed;
-        
+
+        // Uebergang: LOTRO gerade gestartet (nicht laufend → laufend)
+        if (lotroRunning && !prevLotroRunning) {
+            if (remindOnNextStart) {
+                remindOnNextStart = false;
+                log('LOTRO gestartet – pruefe Update (Erinnerung)...');
+                checkAndApplyUpdate();
+            }
+        }
+        prevLotroRunning = lotroRunning;
+
         if (lotroRunning && !clientRunning) {
             startClient();
         } else if (!lotroRunning && clientRunning) {
@@ -399,8 +686,30 @@ log('=================================');
 // Singleton-Lock: verhindert mehrfachen Start (wuerde mehrere Clients → doppelte Events erzeugen)
 acquireLock();
 
+// Stale .bak-Dateien bereinigen: koennen nach abruptem Prozessende im Rename-Fenster verbleiben.
+// Szenario A: .bak vorhanden, Original fehlt → Original wiederherstellen (kritisch).
+// Szenario B: Beide vorhanden → .bak ist Datenmüll, loeschen (harmlos).
+['client.js', 'install-autostart.js', 'package.json', 'updater.js'].forEach(function(name) {
+    var bakPath = path.join(__dirname, name + '.bak');
+    if (!fs.existsSync(bakPath)) return;
+    var destPath = path.join(__dirname, name);
+    if (!fs.existsSync(destPath)) {
+        try { fs.renameSync(bakPath, destPath); log('Backup wiederhergestellt: ' + name + ' (fehlte nach abgebrochenem Update)'); }
+        catch (e) { log('Backup-Wiederherstellung fehlgeschlagen (' + name + '): ' + e.message); }
+    } else {
+        try { fs.unlinkSync(bakPath); log('Stale-Backup geloescht: ' + name + '.bak'); }
+        catch (e) { log('Stale-Backup konnte nicht geloescht werden (' + name + '.bak): ' + e.message); }
+    }
+});
+
 // Update-Check einmalig beim Start (laeuft asynchron im Hintergrund)
 checkAndApplyUpdate();
+
+// Periodische Update-Checks alle 3h (0:00, 3:00, 6:00 usw.)
+scheduleNext3hCheck();
+
+// Lokalen Tod-Abgleich einmalig beim Start durchfuehren (laeuft asynchron)
+syncLocalDeaths();
 
 checkInterval = setInterval(checkLOTRO, 5000);
 checkLOTRO();

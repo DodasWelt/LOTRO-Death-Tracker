@@ -14,7 +14,7 @@ const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
     version: '2.3',
-    autoRestart: true,
+    autoRestart: false,
     logFile: path.join(__dirname, 'client.log')
 };
 
@@ -53,9 +53,16 @@ function getLOTROPath() {
     return path.join(os.homedir(), 'Documents', LOTRO_SUBDIR);
 }
 
+function formatLocalTime(d) {
+    const pad = (n, w) => String(n).padStart(w || 2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) + 'T' +
+           pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) + '.' +
+           pad(d.getMilliseconds(), 3);
+}
+
 // Logging function
 async function log(message, level = 'info') {
-    const timestamp = new Date().toISOString();
+    const timestamp = formatLocalTime(new Date());
     const emoji = {
         'info': 'ℹ️',
         'success': '✅',

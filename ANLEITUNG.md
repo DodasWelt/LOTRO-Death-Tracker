@@ -1,6 +1,6 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung für Streamer
 
-**Version 2.0** | Stand: März 2026
+**Version 2.4** | Stand: März 2026
 
 ---
 
@@ -132,9 +132,9 @@ Nach der Installation:
 
 ---
 
-## 🔄 Update von Version 1.5 auf 2.0
+## 🔄 Update von Version 1.5 auf 2.4
 
-Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.0 aktualisieren?
+Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.4 aktualisieren?
 
 > **Voraussetzung:** ZIP entsperren + UPDATE.bat entsperren (siehe oben)
 

@@ -230,6 +230,7 @@
 
         let currentDeath = null;
         let isDisplaying = false;
+        let isChecking = false;
         let pollCount = 0;
 
         function setStatus(msg) {
@@ -305,20 +306,25 @@
 
         async function checkForDeaths() {
             if (isDisplaying) return;
+            if (isChecking) return;
+            isChecking = true;
+            try {
+                pollCount++;
+                if (pollCount % 10 === 0) {
+                    // Alle ~30s Status aktualisieren
+                    setStatus(`Warte auf Test-Events... (Poll #${pollCount})`);
+                }
 
-            pollCount++;
-            if (pollCount % 10 === 0) {
-                // Alle ~30s Status aktualisieren
-                setStatus(`Warte auf Test-Events... (Poll #${pollCount})`);
-            }
+                const death = await fetchCurrentDeath();
+                if (!death) return;
 
-            const death = await fetchCurrentDeath();
-            if (!death) return;
-
-            // Kein Streamer-Filter im Test-Modus: alle Events werden angezeigt
-            if (!currentDeath || currentDeath.id !== death.id) {
-                currentDeath = death;
-                displayDeath(death);
+                // Kein Streamer-Filter im Test-Modus: alle Events werden angezeigt
+                if (!currentDeath || currentDeath.id !== death.id) {
+                    currentDeath = death;
+                    displayDeath(death);
+                }
+            } finally {
+                isChecking = false;
             }
         }
 

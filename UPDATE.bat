@@ -335,7 +335,7 @@ echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.0
+echo                  Installierte Version: 2.4
 echo.
 echo ================================================================
 echo.

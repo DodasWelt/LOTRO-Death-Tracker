@@ -213,6 +213,7 @@
 
         let currentDeath = null;
         let isDisplaying = false;
+        let isChecking = false;
 
         // Set of character names that are in the streamer mapping table.
         // Deaths from characters NOT in this set are silently skipped.
@@ -373,23 +374,28 @@
         // Main polling loop – only runs when nothing is currently on screen
         async function checkForDeaths() {
             if (isDisplaying) return;
+            if (isChecking) return;
+            isChecking = true;
+            try {
+                const death = await fetchCurrentDeath();
+                if (!death) return;
 
-            const death = await fetchCurrentDeath();
-            if (!death) return;
+                // Skip deaths from characters not in the streamer mapping table.
+                // If mappedCharacters is still empty (API not yet reachable) we let
+                // everything through so the overlay doesn't silently stop working.
+                if (mappedCharacters.size > 0 && !mappedCharacters.has(death.characterName)) {
+                    console.log(`[FILTER] "${death.characterName}" nicht im Streamer-Mapping – wird uebersprungen`);
+                    await skipDeath(death.id);
+                    setTimeout(checkForDeaths, 500); // sofort nächsten prüfen
+                    return;
+                }
 
-            // Skip deaths from characters not in the streamer mapping table.
-            // If mappedCharacters is still empty (API not yet reachable) we let
-            // everything through so the overlay doesn't silently stop working.
-            if (mappedCharacters.size > 0 && !mappedCharacters.has(death.characterName)) {
-                console.log(`[FILTER] "${death.characterName}" nicht im Streamer-Mapping – wird uebersprungen`);
-                await skipDeath(death.id);
-                setTimeout(checkForDeaths, 500); // sofort nächsten prüfen
-                return;
-            }
-
-            if (!currentDeath || currentDeath.id !== death.id) {
-                currentDeath = death;
-                displayDeath(death);
+                if (!currentDeath || currentDeath.id !== death.id) {
+                    currentDeath = death;
+                    displayDeath(death);
+                }
+            } finally {
+                isChecking = false;
             }
         }
 

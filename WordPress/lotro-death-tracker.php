@@ -199,7 +199,7 @@ class LOTRO_Death_Tracker {
         $response = wp_remote_get(
             'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest',
             array(
-                'headers' => array('User-Agent' => 'LOTRO-Death-Tracker-WP/' . $this->db_version),
+                'headers' => array('User-Agent' => 'LOTRO-Death-Tracker-WP/2.4'),
                 'timeout' => 10,
             )
         );
@@ -354,6 +354,13 @@ class LOTRO_Death_Tracker {
         register_rest_route($ns, '/death/next', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_get_next_death'),
+            'permission_callback' => '__return_true',
+        ));
+
+        // Watcher: silently insert missed deaths (processed=1, never shown in overlay)
+        register_rest_route($ns, '/death/silent', array(
+            'methods'             => 'POST',
+            'callback'            => array($this, 'api_submit_silent'),
             'permission_callback' => '__return_true',
         ));
 
@@ -581,6 +588,67 @@ class LOTRO_Death_Tracker {
             'queuePosition' => intval($queue_count),
             'deathCount'    => $death_count,
             'id'            => $wpdb->insert_id,
+        ));
+    }
+
+    /**
+     * POST /death/silent
+     * Inserts N missed deaths with processed=1 (never shown in overlay).
+     * Called by the watcher at startup to back-fill deaths that occurred while
+     * the client was not running.
+     * Body: { characterName, count, level, race, characterClass }
+     */
+    public function api_submit_silent($request) {
+        global $wpdb;
+
+        $params          = $request->get_json_params();
+        $character_name  = sanitize_text_field($params['characterName'] ?? '');
+        $count           = intval($params['count'] ?? 0);
+        $level           = intval($params['level'] ?? 0);
+        $race            = sanitize_text_field($params['race'] ?? '');
+        $character_class = sanitize_text_field($params['characterClass'] ?? '');
+
+        if (empty($character_name) || $count <= 0) {
+            return new WP_Error('missing_fields', 'characterName and count > 0 required', array('status' => 400));
+        }
+
+        $inserted = 0;
+        for ($i = 0; $i < $count; $i++) {
+            $current_deaths = intval($wpdb->get_var($wpdb->prepare(
+                "SELECT total_deaths FROM {$this->table_characters} WHERE character_name = %s",
+                $character_name
+            )));
+            $death_count = $current_deaths + 1;
+
+            $result = $wpdb->insert(
+                $this->table_deaths,
+                array(
+                    'character_name'  => $character_name,
+                    'level'           => $level,
+                    'event_type'      => 'death',
+                    'death_count'     => $death_count,
+                    'death_date'      => current_time('Y-m-d'),
+                    'death_time'      => current_time('H:i:s'),
+                    'death_datetime'  => current_time('mysql'),
+                    'region'          => 'Unknown Location',
+                    'race'            => $race,
+                    'character_class' => $character_class,
+                    'timestamp'       => time(),
+                    'processed'       => 1,
+                    'shown_at'        => current_time('mysql'),
+                ),
+                array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%s')
+            );
+
+            if ($result) {
+                $this->upsert_character($character_name, $level, true, $race, $character_class);
+                $inserted++;
+            }
+        }
+
+        return rest_ensure_response(array(
+            'success'  => true,
+            'inserted' => $inserted,
         ));
     }
 

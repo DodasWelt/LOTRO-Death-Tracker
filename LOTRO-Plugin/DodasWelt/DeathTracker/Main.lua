@@ -103,6 +103,11 @@ function DeathTracker:Initialize()
         DeathTracker:OnLevelChanged();
     end
     
+    -- Persistenten Todes-Zaehler laden (akkumuliert ueber alle Sessions).
+    -- Wird vom Watcher genutzt um fehlende Tode (z.B. Client nicht gestartet) zu erkennen.
+    self.State = Turbine.PluginData.Load(Turbine.DataScope.Character, "DeathTracker_State") or {};
+    self.State.totalDeathsTrackedLocally = self.State.totalDeathsTrackedLocally or 0;
+
     Turbine.Shell.WriteLine("=================================");
     Turbine.Shell.WriteLine("DeathTracker v" .. DeathTracker.Config.version .. " initialized!");
     Turbine.Shell.WriteLine("Tracking: " .. self.player:GetName() .. " (Level " .. self.Config.lastKnownLevel .. ")");
@@ -203,6 +208,10 @@ function DeathTracker:LogEvent(eventType)
     
     if eventType == "death" then
         self.Config.lastDeathWasLogged = true;
+        -- Persistenten Zaehler erhoehen und speichern.
+        -- Unabhaengig davon ob client.js laeuft - Watcher nutzt diesen Wert beim naechsten Start.
+        self.State.totalDeathsTrackedLocally = self.State.totalDeathsTrackedLocally + 1;
+        Turbine.PluginData.Save(Turbine.DataScope.Character, "DeathTracker_State", self.State);
     end
     
     -- Trigger external sync (this will be picked up by the client application)

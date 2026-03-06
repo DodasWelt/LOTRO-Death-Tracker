@@ -140,6 +140,8 @@ Watcher startet
        → npm install  (Fehler → errors[])
        → node install-autostart.js install (Fehler → errors[])
        → version.json aktualisieren (Fehler → errors[])
+       → getLOTROPath() → Main.lua + DeathTracker.plugin von GitHub laden → in Plugin-Verzeichnis kopieren
+           (Fehler → errors[], aber nicht fatal — Client-Update bleibt erfolgreich)
        → Abschluss-Dialog: Erfolg (Info-Icon) ODER Fehlerliste nummeriert + Log-Pfad (Critical-Icon)
        → updater.js löscht sich selbst
 ```
@@ -148,7 +150,9 @@ Watcher startet
 
 ### PluginData Format
 
-Das Plugin speichert via `Turbine.DataScope.Character` eine **Lua-Tabelle** (nicht JSON). `client.js` parst dies mit `parseLuaTable()`:
+Das Plugin speichert via `Turbine.DataScope.Character` zwei **Lua-Tabellen** (nicht JSON):
+
+**`DeathTracker_Sync.plugindata`** — wird von `client.js` gelesen:
 ```
 {
   ["lastUpdate"] = 1234567890.0,
@@ -157,6 +161,24 @@ Das Plugin speichert via `Turbine.DataScope.Character` eine **Lua-Tabelle** (nic
   ["version"] = "2.1",
 }
 ```
+
+**`DeathTracker_State.plugindata`** (ab v2.4) — wird vom Watcher gelesen:
+```
+{
+  ["totalDeathsTrackedLocally"] = 42.0,
+}
+```
+Enthält den kumulierten Todes-Zähler über alle Sessions. Wird vom Watcher in `syncLocalDeaths()` genutzt, um fehlende Tode (z. B. Client nicht gestartet) zu erkennen und still nachzutragen. Referenzpfad: `[LotroPath]/PluginData/[Server]/[Charakter]/DeathTracker_State.plugindata`
+
+**`Client/deaths.local.json`** (ab v2.4) — Watcher-seitig:
+```json
+{
+  "characters": {
+    "Inge": { "baselineServer": 40, "firstSeenAt": "2026-03-06T11:00:00.000Z" }
+  }
+}
+```
+Speichert den DB-Todesstand zum Zeitpunkt der Erst-Erkennung. Formel: `missing = currentPlugin - (currentServer - baselineServer)`.
 
 ### Race/Class Enum-Werte (ab v2.1)
 
@@ -231,6 +253,7 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 POST   /wp-json/lotro-deaths/v1/death             # Event senden (death ODER levelup)
 GET    /wp-json/lotro-deaths/v1/death/current     # Ältester unverarbeiteter Death
 POST   /wp-json/lotro-deaths/v1/death/next        # Aktuellen als gezeigt markieren, nächsten holen
+POST   /wp-json/lotro-deaths/v1/death/silent      # Fehlende Tode still nachtragen (processed=1, kein Overlay)
 GET    /wp-json/lotro-deaths/v1/queue             # Queue-Status
 GET    /wp-json/lotro-deaths/v1/history           # History (?limit=N, ?character=Name)
 GET    /wp-json/lotro-deaths/v1/characters        # Alle Characters mit Level + Todes-Statistiken
@@ -366,20 +389,24 @@ StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/
 - GitHub Releases sind die maßgebliche Quelle (Tag-Format: `v2.0`, `v2.1` usw.).
 - `$db_version` muss bei jeder DB-Schemaänderung auf die aktuelle Minor-Version gesetzt werden.
 
-Bei jedem Release alle Versionsnummern synchron halten:
+Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 
-| Datei/Feld | Nächster Release (v2.3) |
+| Datei/Feld | Pflicht |
 |---|---|
-| PHP Plugin-Header `Version:` | `2.3` |
-| PHP `$db_version` | `'2.1'` (kein Schema-Change in v2.3 — bleibt unverändert) |
-| `Client/package.json` `"version"` | `"2.3"` |
-| `Client/version.json.template` | `{ "version": "2.3" }` |
-| `Client/client.js` Header-Kommentar | `Version: 2.3` |
-| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | `2.3` |
-| `LOTRO-Plugin/Main.lua` Kommentar + Config | `"2.3"` |
-| Git-Tag | `v2.3` |
+| PHP Plugin-Header `Version:` | auf `X.Y` setzen |
+| PHP `$db_version` | nur erhöhen bei DB-Schema-Änderung |
+| PHP User-Agent in `check_for_update()` | auf `'LOTRO-Death-Tracker-WP/X.Y'` setzen |
+| `Client/package.json` `"version"` | auf `"X.Y"` setzen |
+| `Client/version.json.template` | auf `{ "version": "X.Y" }` setzen |
+| `Client/client.js` Header-Kommentar | auf `Version: X.Y` setzen |
+| `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | auf `X.Y` setzen |
+| `LOTRO-Plugin/Main.lua` Kommentar + Config | auf `"X.Y"` setzen |
+| `INSTALL.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
+| `UPDATE.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
+| `ANLEITUNG.md` Versionsnummer im Titel + Update-Abschnitt | auf `X.Y` setzen |
+| Git-Tag | `vX.Y` |
 
-> **Aktueller Stand (unveröffentlicht):** Code-Stand ist v2.3 (Thema 11 Watcher Singleton-Lock implementiert). Letzter GitHub-Release: v2.0. v2.1–v2.3 noch nicht released.
+> **Aktueller Stand:** Code-Stand ist **v2.4** (implementiert, noch nicht released). Letzter GitHub-Release: **v2.3** (2026-03-03).
 
 ## WordPress Plugin Auto-Update
 
@@ -392,9 +419,9 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.1/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.3/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.1` → `@v2.2` (usw.) im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.3` → `@v2.4` (usw.) im Script-Tag aktualisieren.
 
 ---
 
