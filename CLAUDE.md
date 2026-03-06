@@ -341,6 +341,18 @@ Jeder Release enthält zwei ZIP-Assets:
 | `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, `INSTALL.bat`, `UPDATE.bat`, `ANLEITUNG.md` | Streamer (Erst- und Upgrade-Installation) |
 | `lotro-death-tracker.zip` | `lotro-death-tracker/lotro-death-tracker.php` | WordPress Auto-Update-Mechanismus |
 
+**Versionsprüfung (PFLICHT vor jedem Release und Pre-Release):**
+```bash
+# Alle Versionsstellen auf einmal prüfen – alle Werte müssen identisch sein!
+grep -h "\"version\"" Client/package.json Client/version.json.template
+grep -h "Version:" Client/client.js WordPress/lotro-death-tracker.php
+grep -h "version = " Client/client.js LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua
+grep -h "<Version>" LOTRO-Plugin/DodasWelt/DeathTracker.plugin
+grep -h "Installierte Version:" INSTALL.bat UPDATE.bat
+grep -m1 "^\*\*Version" ANLEITUNG.md
+```
+→ Alle ausgegebenen Versionsnummern müssen `X.Y` sein. Erst wenn das stimmt, weitermachen.
+
 **Release erstellen** (wenn der Nutzer es mitteilt):
 ```bash
 # 1. Staging-Verzeichnis mit Top-Level-Ordner anlegen (ZIP muss Ordner enthalten!)
