@@ -45,7 +45,7 @@ Windows blockiert aus dem Internet heruntergeladene Dateien automatisch ("Mark o
 
 ### Schritt 1: ZIP-Datei entsperren (VOR dem Entpacken!)
 
-1. **Rechtsklick** auf die heruntergeladene ZIP-Datei (`LOTRO-Death-Tracker-v2.0.zip`)
+1. **Rechtsklick** auf die heruntergeladene ZIP-Datei (`LOTRO-Death-Tracker-v2.4.zip`)
 2. Wähle: **Eigenschaften**
 3. Unten im Fenster: Haken bei **"Zulassen"** setzen
 4. Auf **Übernehmen** klicken, dann **OK**
@@ -122,7 +122,7 @@ Der Installer führt dich durch 5 Schritte:
 
 #### **Schritt 3: Fertig!**
 
-Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.0 erfolgreich installiert!"**
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.4 erfolgreich installiert!"**
 
 Nach der Installation:
 - ✅ Plugin installiert
@@ -157,7 +157,7 @@ Der Updater macht automatisch:
 
 #### **Schritt 3: Fertig!**
 
-Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.0 aktualisiert!"**
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.4 aktualisiert!"**
 
 Ein Windows-Neustart ist **nicht** nötig - der neue Watcher startet automatisch im Hintergrund.
 
