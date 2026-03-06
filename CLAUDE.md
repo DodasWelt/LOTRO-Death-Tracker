@@ -349,6 +349,7 @@ grep -h "Version:" Client/client.js WordPress/lotro-death-tracker.php
 grep -h "version = " Client/client.js LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua
 grep -h "<Version>" LOTRO-Plugin/DodasWelt/DeathTracker.plugin
 grep -h "Installierte Version:" INSTALL.bat UPDATE.bat
+grep -h "v2\." INSTALL.bat UPDATE.bat
 grep -m1 "^\*\*Version" ANLEITUNG.md
 ```
 → Alle ausgegebenen Versionsnummern müssen `X.Y` sein. Erst wenn das stimmt, weitermachen.
@@ -423,7 +424,11 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | auf `X.Y` setzen |
 | `LOTRO-Plugin/Main.lua` Kommentar + Config | auf `"X.Y"` setzen |
 | `INSTALL.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
+| `INSTALL.bat` Popup-Text (`MsgBox`) | auf `vX.Y` setzen |
+| `UPDATE.bat` Fenstertitel (`title`) | auf `vX.Y` setzen |
+| `UPDATE.bat` Header-Echo (`UPDATE AUF VERSION`) | auf `X.Y` setzen |
 | `UPDATE.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
+| `UPDATE.bat` Popup-Text (`MsgBox`) | auf `vX.Y` setzen |
 | `ANLEITUNG.md` Versionsnummer im Titel + Update-Abschnitt | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
