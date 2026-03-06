@@ -456,8 +456,8 @@ function handleUpdateDialog(base, remoteVersion, stagingDir) {
     var r1 = showVbsDialog([
         'LOTRO Death Tracker Update v' + remoteVersion + ' verfuegbar!',
         '',
-        'Herr der Ringe Online wird automatisch beendet, wenn Sie jetzt installieren.',
-        'Der Watcher pausiert kurz waehrend dieses Dialogs – Tode werden weiterhin aufgezeichnet.',
+        'Herr der Ringe Online wird automatisch beendet, wenn du das Update jetzt installierst (indem du unten auf Ja drueckst).',
+        'Der Watcher pausiert kurz waehrend dieses Dialogs - Die Tode werden weiterhin aufgezeichnet.',
         '',
         '[Ja]  = Jetzt installieren',
         '[Nein] = Spaeter erinnern'
