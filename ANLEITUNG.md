@@ -1,6 +1,6 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung für Streamer
 
-**Version 2.4** | Stand: März 2026
+**Version 2.5** | Stand: März 2026
 
 ---
 
@@ -10,7 +10,7 @@
 2. [Wichtig vor dem Start: ZIP und BAT-Datei entsperren](#wichtig-vor-dem-start-zip-und-bat-datei-entsperren)
 3. [Voraussetzungen](#voraussetzungen)
 4. [Installation - Automatisch](#installation-automatisch)
-5. [Update von Version 1.5 auf 2.4](#update-von-version-15-auf-24)
+5. [Update von Version 1.5 auf 2.5](#update-von-version-15-auf-25)
 6. [Plugin im Spiel laden](#plugin-im-spiel-laden)
 7. [StreamElements Overlay einrichten](#streamelements-overlay-einrichten)
 
@@ -45,7 +45,7 @@ Windows blockiert aus dem Internet heruntergeladene Dateien automatisch ("Mark o
 
 ### Schritt 1: ZIP-Datei entsperren (VOR dem Entpacken!)
 
-1. **Rechtsklick** auf die heruntergeladene ZIP-Datei (`LOTRO-Death-Tracker-v2.4.zip`)
+1. **Rechtsklick** auf die heruntergeladene ZIP-Datei (`LOTRO-Death-Tracker-v2.5.zip`)
 2. Wähle: **Eigenschaften**
 3. Unten im Fenster: Haken bei **"Zulassen"** setzen
 4. Auf **Übernehmen** klicken, dann **OK**
@@ -122,7 +122,7 @@ Der Installer führt dich durch 5 Schritte:
 
 #### **Schritt 3: Fertig!**
 
-Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.4 erfolgreich installiert!"**
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.5 erfolgreich installiert!"**
 
 Nach der Installation:
 - ✅ Plugin installiert
@@ -132,9 +132,9 @@ Nach der Installation:
 
 ---
 
-## 🔄 Update von Version 1.5 auf 2.4
+## 🔄 Update von Version 1.5 auf 2.5
 
-Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.4 aktualisieren?
+Du hast bereits den LOTRO Death Tracker installiert und möchtest auf Version 2.5 aktualisieren?
 
 > **Voraussetzung:** ZIP entsperren + UPDATE.bat entsperren (siehe oben)
 
@@ -157,7 +157,7 @@ Der Updater macht automatisch:
 
 #### **Schritt 3: Fertig!**
 
-Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.4 aktualisiert!"**
+Am Ende erscheint ein Popup-Fenster: **"LOTRO Death Tracker v2.5 aktualisiert!"**
 
 Ein Windows-Neustart ist **nicht** nötig - der neue Watcher startet automatisch im Hintergrund.
 

@@ -1,7 +1,7 @@
-// LOTRO Death & Level Tracker - Client Component v2.4
+// LOTRO Death & Level Tracker - Client Component v2.5
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 2.4
+// Version: 2.5
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,7 +13,7 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '2.4',
+    version: '2.5',
     autoRestart: false,
     logFile: path.join(__dirname, 'client.log')
 };
@@ -28,9 +28,67 @@ function getLOTROPath() {
         return process.env.LOTRO_PATH;
     }
 
-    const { execSync } = require('child_process');
     const fsSync = require('fs');
     const LOTRO_SUBDIR = 'The Lord of the Rings Online';
+
+    if (process.platform === 'linux') {
+        // Steam (native)
+        const steamNative = path.join(os.homedir(), '.steam', 'steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+        if (fsSync.existsSync(steamNative)) return steamNative;
+
+        // Steam (Flatpak)
+        const steamFlatpak = path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+        if (fsSync.existsSync(steamFlatpak)) return steamFlatpak;
+
+        // Steam Library VDF scan (fuer nicht-standard Steam Library-Ordner auf zweiter Festplatte etc.)
+        const vdfLocations = [
+            path.join(os.homedir(), '.steam', 'steam', 'config', 'libraryfolders.vdf'),
+            path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'config', 'libraryfolders.vdf')
+        ];
+        for (const vdfFile of vdfLocations) {
+            if (!fsSync.existsSync(vdfFile)) continue;
+            try {
+                const vdf = fsSync.readFileSync(vdfFile, 'utf8');
+                const re = /"path"\s+"([^"]+)"/g;
+                let vm;
+                while ((vm = re.exec(vdf)) !== null) {
+                    const candidate = path.join(vm[1].trim(), 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+                    if (fsSync.existsSync(candidate)) return candidate;
+                }
+            } catch (_) {}
+        }
+
+        // Lutris (YAML-Scan, unterstuetzt wine_prefix: und prefix:)
+        const lutrisDir = path.join(os.homedir(), '.config', 'lutris', 'games');
+        if (fsSync.existsSync(lutrisDir)) {
+            try {
+                const files = fsSync.readdirSync(lutrisDir).filter(f =>
+                    (f.toLowerCase().includes('lord') || f.toLowerCase().includes('lotro')) && f.endsWith('.yml')
+                );
+                for (const f of files) {
+                    try {
+                        const yml = fsSync.readFileSync(path.join(lutrisDir, f), 'utf8');
+                        const m = yml.match(/(?:wine_prefix|prefix):\s*(.+)/);
+                        if (m) {
+                            const uname = process.env.USER || (() => { try { return os.userInfo().username; } catch (_) { return 'user'; } })();
+                            const candidate = path.join(m[1].trim(), 'drive_c', 'users', uname, 'My Documents', LOTRO_SUBDIR);
+                            if (fsSync.existsSync(candidate)) return candidate;
+                        }
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+
+        // Standard Wine-Prefix (~/.wine)
+        const wineUname = process.env.USER || (() => { try { return os.userInfo().username; } catch (_) { return 'user'; } })();
+        const wineDefault = path.join(os.homedir(), '.wine', 'drive_c', 'users', wineUname, 'My Documents', LOTRO_SUBDIR);
+        if (fsSync.existsSync(wineDefault)) return wineDefault;
+
+        // Fallback
+        return path.join(os.homedir(), 'Documents', LOTRO_SUBDIR);
+    }
+
+    const { execSync } = require('child_process');
 
     // Schritt 1: Registry-Abfrage (zuverlaessigste Quelle - liefert echten Dokumente-Pfad)
     try {

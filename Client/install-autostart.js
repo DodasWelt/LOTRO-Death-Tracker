@@ -5,7 +5,9 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-const STARTUP_FOLDER = path.join(
+const IS_LINUX = process.platform === 'linux';
+
+const STARTUP_FOLDER = IS_LINUX ? '' : path.join(
     os.homedir(),
     'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup'
 );
@@ -13,7 +15,9 @@ const STARTUP_FOLDER = path.join(
 const WATCHER_VBS = path.join(__dirname, 'start-lotro-watcher.vbs');
 const WATCHER_JS = path.join(__dirname, 'lotro-watcher.js');
 const CLIENT_PATH = path.join(__dirname, 'client.js');
-const SHORTCUT_PATH = path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
+const SHORTCUT_PATH = IS_LINUX
+    ? path.join(os.homedir(), '.config', 'autostart', 'lotro-death-tracker.desktop')
+    : path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 
 // Erstelle Watcher-Script
 function createWatcherScript() {
@@ -64,13 +68,15 @@ function acquireLock() {
             if (existingPid && existingPid !== process.pid) {
                 try {
                     process.kill(existingPid, 0); // Signal 0: prueft nur ob Prozess lebt
-                    // Pruefen ob der Prozess tatsaechlich node.exe ist (PID-Wiederverwendungs-Schutz).
-                    // Windows kann PIDs wiederverwenden; ein fremder Prozess soll den Watcher nicht blockieren.
+                    // Pruefen ob der Prozess tatsaechlich node ist (PID-Wiederverwendungs-Schutz).
                     var isNodeProc = false;
                     try {
-                        var tc = spawnSync('tasklist', ['/FI', 'PID eq ' + existingPid, '/FO', 'CSV', '/NH'], { windowsHide: true, encoding: 'utf8' });
-                        if (tc.stdout && tc.stdout.toLowerCase().indexOf('node.exe') !== -1) {
-                            isNodeProc = true;
+                        if (process.platform === 'linux') {
+                            var tc = spawnSync('ps', ['-p', String(existingPid), '-o', 'comm='], { encoding: 'utf8' });
+                            if (tc.stdout && tc.stdout.toLowerCase().indexOf('node') !== -1) isNodeProc = true;
+                        } else {
+                            var tc = spawnSync('tasklist', ['/FI', 'PID eq ' + existingPid, '/FO', 'CSV', '/NH'], { windowsHide: true, encoding: 'utf8' });
+                            if (tc.stdout && tc.stdout.toLowerCase().indexOf('node.exe') !== -1) isNodeProc = true;
                         }
                     } catch (tce) {}
                     if (isNodeProc) {
@@ -174,6 +180,50 @@ function downloadRaw(rawUrl, destPath, cb) {
 function getLotroPath() {
     var lotroDir = 'The Lord of the Rings Online';
     if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
+    if (process.platform === 'linux') {
+        var steamNative = path.join(os.homedir(), '.steam', 'steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', lotroDir);
+        if (fs.existsSync(steamNative)) return steamNative;
+        var steamFlatpak = path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', lotroDir);
+        if (fs.existsSync(steamFlatpak)) return steamFlatpak;
+        var vdfLocations = [
+            path.join(os.homedir(), '.steam', 'steam', 'config', 'libraryfolders.vdf'),
+            path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'config', 'libraryfolders.vdf')
+        ];
+        for (var vi = 0; vi < vdfLocations.length; vi++) {
+            if (!fs.existsSync(vdfLocations[vi])) continue;
+            try {
+                var vdfContent = fs.readFileSync(vdfLocations[vi], 'utf8');
+                var vdfRe = /"path"\\s+"([^"]+)"/g;
+                var vm;
+                while ((vm = vdfRe.exec(vdfContent)) !== null) {
+                    var steamCand = path.join(vm[1].trim(), 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', lotroDir);
+                    if (fs.existsSync(steamCand)) return steamCand;
+                }
+            } catch (_) {}
+        }
+        var lutrisDir = path.join(os.homedir(), '.config', 'lutris', 'games');
+        if (fs.existsSync(lutrisDir)) {
+            try {
+                var lfiles = fs.readdirSync(lutrisDir).filter(function(f) { return (f.toLowerCase().indexOf('lord') !== -1 || f.toLowerCase().indexOf('lotro') !== -1) && f.endsWith('.yml'); });
+                for (var li = 0; li < lfiles.length; li++) {
+                    try {
+                        var yml = fs.readFileSync(path.join(lutrisDir, lfiles[li]), 'utf8');
+                        var lm = yml.match(/(?:wine_prefix|prefix):\\s*(.+)/);
+                        if (lm) {
+                            var uname = process.env.USER || 'user';
+                            var candidate = path.join(lm[1].trim(), 'drive_c', 'users', uname, 'My Documents', lotroDir);
+                            if (fs.existsSync(candidate)) return candidate;
+                        }
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+        // Standard Wine-Prefix (~/.wine)
+        var wineUname = process.env.USER || 'user';
+        var wineDefault = path.join(os.homedir(), '.wine', 'drive_c', 'users', wineUname, 'My Documents', lotroDir);
+        if (fs.existsSync(wineDefault)) return wineDefault;
+        return path.join(os.homedir(), 'Documents', lotroDir);
+    }
     try {
         var r = spawnSync('reg', ['query', 'HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders', '/v', 'Personal'], { windowsHide: true, encoding: 'utf8' });
         var m = (r.stdout || '').match(/Personal\\s+REG_SZ\\s+(.+)/);
@@ -427,6 +477,12 @@ function applyUpdateNow(base, remoteVersion, stagingDir) {
 
 // Synchroner LOTRO-Check (nur fuer Update-Dialog – blockiert kurz den Event-Loop)
 function isLOTRORunningSync() {
+    if (process.platform === 'linux') {
+        var r1 = spawnSync('pgrep', ['-f', 'lotroclient'], { encoding: 'utf8' });
+        if (r1.status === 0) return true;
+        var r2 = spawnSync('pgrep', ['-f', 'proton.*212500'], { encoding: 'utf8' });
+        return r2.status === 0;
+    }
     var exes = ['lotroclient64.exe', 'lotroclient.exe'];
     for (var i = 0; i < exes.length; i++) {
         try {
@@ -437,10 +493,36 @@ function isLOTRORunningSync() {
     return false;
 }
 
-// Zeigt einen VBScript-Dialog synchron (blockiert bis Nutzer klickt).
+// Zeigt einen Dialog auf Linux: zenity → kdialog → notify-send + Log.
+// type: 'question' (Ja/Nein, returns bool) | 'info' | 'error'
+function linuxDialog(type, title, message) {
+    if (spawnSync('which', ['zenity'], { encoding: 'utf8' }).status === 0) {
+        if (type === 'question')
+            return spawnSync('zenity', ['--question', '--title', title, '--text', message]).status === 0;
+        spawnSync('zenity', ['--' + (type === 'error' ? 'error' : 'info'), '--title', title, '--text', message]);
+        return true;
+    }
+    if (spawnSync('which', ['kdialog'], { encoding: 'utf8' }).status === 0) {
+        if (type === 'question')
+            return spawnSync('kdialog', ['--yesno', message, '--title', title]).status === 0;
+        spawnSync('kdialog', ['--msgbox', message, '--title', title]);
+        return true;
+    }
+    try { spawnSync('notify-send', [title, message]); } catch (_) {}
+    log('[DIALOG] ' + title + ': ' + message);
+    return type !== 'question';
+}
+
+// Zeigt einen VBScript-Dialog (Windows) oder linuxDialog (Linux).
 // buttons: 0=OK, 4=Ja/Nein. Rueckgabe: 6=Ja, 7=Nein, 1=OK, -1=Fehler.
 function showVbsDialog(lines, title, buttons) {
     if (typeof lines === 'string') lines = [lines];
+    if (process.platform === 'linux') {
+        var type = (buttons === 4) ? 'question' : (buttons === 16 ? 'error' : 'info');
+        var message = lines.join('\\n');
+        var result = linuxDialog(type, title, message);
+        return result ? 6 : 7;
+    }
     var msgExpr = lines.map(function(l) { return '"' + l.replace(/"/g, '') + '"'; }).join(' & vbCrLf & ');
     var vbs = 'Dim r\\nr = MsgBox(' + msgExpr + ', ' + buttons + ', "' + title + '")\\nWScript.Quit r\\n';
     var tmp = path.join(__dirname, '_watcher_dlg.vbs');
@@ -465,8 +547,12 @@ function handleUpdateDialog(base, remoteVersion, stagingDir) {
 
     if (r1 === 6) {
         log('Nutzer: Jetzt installieren – beende LOTRO...');
-        spawnSync('taskkill', ['/F', '/IM', 'lotroclient64.exe', '/T'], { windowsHide: true });
-        spawnSync('taskkill', ['/F', '/IM', 'lotroclient.exe', '/T'], { windowsHide: true });
+        if (process.platform === 'linux') {
+            spawnSync('pkill', ['-f', 'lotroclient']);
+        } else {
+            spawnSync('taskkill', ['/F', '/IM', 'lotroclient64.exe', '/T'], { windowsHide: true });
+            spawnSync('taskkill', ['/F', '/IM', 'lotroclient.exe', '/T'], { windowsHide: true });
+        }
         stopClient();
         applyUpdateNow(base, remoteVersion, stagingDir);
     } else {
@@ -568,7 +654,7 @@ function startDownload(base, remoteVersion, stagingDir) {
             const updater = spawn(process.execPath, [UPDATER_PATH, remoteVersion], {
                 detached: true,
                 stdio: 'ignore',
-                windowsHide: true
+                windowsHide: process.platform === 'win32'
             });
             updater.unref();
 
@@ -598,22 +684,24 @@ function startDownload(base, remoteVersion, stagingDir) {
 // ── Ende Auto-Update ───────────────────────────────────────────────────────
 
 function isLOTRORunning(callback) {
-    // Prüfe beide Versionen separat (tasklist unterstützt kein OR)
+    if (process.platform === 'linux') {
+        var r = spawnSync('pgrep', ['-f', 'lotroclient'], { encoding: 'utf8' });
+        if (r.status === 0) { callback(true); return; }
+        var r2 = spawnSync('pgrep', ['-f', 'proton.*212500'], { encoding: 'utf8' });
+        callback(r2.status === 0);
+        return;
+    }
     // WICHTIG: windowsHide verhindert aufpoppende CMD-Fenster!
     exec('tasklist /FI "IMAGENAME eq lotroclient64.exe"', { windowsHide: true }, (error1, stdout1) => {
         if (!error1 && stdout1.includes('lotroclient64.exe')) {
             callback(true);
             return;
         }
-        
-        // Wenn 64-bit nicht läuft, prüfe 32-bit
         exec('tasklist /FI "IMAGENAME eq lotroclient.exe"', { windowsHide: true }, (error2, stdout2) => {
             if (!error2 && stdout2.includes('lotroclient.exe')) {
                 callback(true);
                 return;
             }
-            
-            // Beide nicht gefunden
             callback(false);
         });
     });
@@ -629,7 +717,7 @@ function startClient() {
     clientProcess = spawn(process.execPath, [CLIENT_PATH], {
         detached: false,
         stdio: 'ignore',
-        windowsHide: true
+        windowsHide: process.platform === 'win32'
     });
     
     clientProcess.unref();
@@ -680,7 +768,7 @@ function checkLOTRO() {
 
 log('=================================');
 log('LOTRO Watcher gestartet');
-log('Ueberwacht: lotroclient64.exe & lotroclient.exe');
+log('Ueberwacht: ' + (process.platform === 'linux' ? 'lotroclient (pgrep) + proton/212500' : 'lotroclient64.exe & lotroclient.exe'));
 log('=================================');
 
 // Singleton-Lock: verhindert mehrfachen Start (wuerde mehrere Clients → doppelte Events erzeugen)
@@ -737,8 +825,9 @@ process.on('exit', releaseLock);
     console.log('✅ Watcher-Script erstellt:', WATCHER_JS);
 }
 
-// Erstelle VBS-Script zum unsichtbaren Start
+// Erstelle VBS-Script zum unsichtbaren Start (nur Windows)
 function createVBSScript() {
+    if (IS_LINUX) return;
     const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
 WshShell.Run """${process.execPath.replace(/\\/g, '\\\\')}"" ""${WATCHER_JS.replace(/\\/g, '\\\\')}"" ", 0, False
 Set WshShell = Nothing`;
@@ -747,8 +836,42 @@ Set WshShell = Nothing`;
     console.log('✅ VBS-Start-Script erstellt:', WATCHER_VBS);
 }
 
-// Installiere in Startup-Ordner
+// Installiere XDG Autostart (Linux)
+function installLinux() {
+    try {
+        console.log('LOTRO Death Tracker - Autostart einrichten (Linux)');
+        console.log('');
+
+        const xdgDir = path.join(os.homedir(), '.config', 'autostart');
+        if (!fs.existsSync(xdgDir)) fs.mkdirSync(xdgDir, { recursive: true });
+
+        createWatcherScript();
+
+        const desktopContent = '[Desktop Entry]\nType=Application\nName=LOTRO Death Tracker\nExec="' + process.execPath + '" "' + WATCHER_JS + '"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n';
+        fs.writeFileSync(SHORTCUT_PATH, desktopContent, 'utf8');
+        console.log('XDG Autostart erstellt: ' + SHORTCUT_PATH);
+        console.log('');
+
+        const pidFilePath = path.join(__dirname, 'watcher.pid');
+        if (fs.existsSync(pidFilePath)) { try { fs.unlinkSync(pidFilePath); } catch (e) {} }
+
+        const { spawn } = require('child_process');
+        const watcher = spawn(process.execPath, [WATCHER_JS], { detached: true, stdio: 'ignore' });
+        watcher.unref();
+
+        console.log('Watcher gestartet!');
+        console.log('');
+        console.log('Logs: ' + path.join(__dirname, 'watcher.log'));
+        process.exit(0);
+    } catch (error) {
+        console.error('Fehler:', error.message);
+        process.exit(1);
+    }
+}
+
+// Installiere in Startup-Ordner (Windows) oder XDG Autostart (Linux)
 function install() {
+    if (IS_LINUX) { installLinux(); return; }
     try {
         console.log('═════════════════════════════════════════════════');
         console.log('🎮 LOTRO Death Tracker - Smart Autostart');
@@ -853,8 +976,25 @@ function install() {
     }
 }
 
+// Deinstalliere XDG Autostart (Linux)
+function uninstallLinux() {
+    console.log('LOTRO Death Tracker - Autostart entfernen (Linux)');
+    if (fs.existsSync(SHORTCUT_PATH)) {
+        fs.unlinkSync(SHORTCUT_PATH);
+        console.log('XDG Autostart entfernt: ' + SHORTCUT_PATH);
+    } else {
+        console.log('XDG Autostart nicht gefunden.');
+    }
+    if (fs.existsSync(WATCHER_JS)) {
+        fs.unlinkSync(WATCHER_JS);
+        console.log('Watcher-Script geloescht.');
+    }
+    console.log('Autostart entfernt.');
+}
+
 // Deinstalliere
 function uninstall() {
+    if (IS_LINUX) { uninstallLinux(); return; }
     try {
         console.log('═════════════════════════════════════════════════');
         console.log('🔧 Entferne Smart Autostart...');
@@ -909,18 +1049,16 @@ function status() {
     if (installed) {
         console.log('Status: ✅ INSTALLIERT');
         console.log('');
-        console.log('Startup-Datei:', SHORTCUT_PATH);
+        console.log('Autostart-Datei:', SHORTCUT_PATH);
         console.log('');
-        console.log('Der Watcher startet automatisch beim Windows-Start.');
-        console.log('');
-        console.log('🔍 Prüfen:');
-        console.log('  1. Starte LOTRO');
-        console.log('  2. Warte 5-10 Sekunden');
-        console.log('  3. Task-Manager → Details → node.exe');
-        console.log('  4. Sollte 2x laufen (Watcher + Client)');
+        if (IS_LINUX) {
+            console.log('Der Watcher startet automatisch beim Anmelden (XDG Autostart).');
+        } else {
+            console.log('Der Watcher startet automatisch beim Windows-Start.');
+        }
         console.log('');
         console.log('📝 Logs:');
-        console.log('  notepad "' + path.join(__dirname, 'watcher.log') + '"');
+        console.log('  ' + path.join(__dirname, 'watcher.log'));
     } else {
         console.log('Status: ❌ NICHT INSTALLIERT');
         console.log('');
@@ -939,7 +1077,7 @@ function test() {
     console.log('═════════════════════════════════════════════════');
     console.log('');
     
-    if (!fs.existsSync(WATCHER_VBS)) {
+    if (!fs.existsSync(WATCHER_JS)) {
         console.log('❌ Watcher-Script nicht gefunden!');
         console.log('');
         console.log('Installiere zuerst:');

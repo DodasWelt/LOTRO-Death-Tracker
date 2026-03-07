@@ -12,8 +12,9 @@ const os = require('os');
 const dir = __dirname;
 const newVersion = process.argv[2] || '0';
 
-// npm-Pfad aus node.exe-Verzeichnis ableiten (laeuft auch wenn node nicht im Admin-PATH ist)
+// npm-Pfad: auf Windows aus node.exe-Verzeichnis ableiten (Admin-PATH-Problem), auf Linux direkt
 const npmCmd = (function() {
+    if (process.platform !== 'win32') return 'npm';
     const c = path.join(path.dirname(process.execPath), 'npm.cmd');
     return fs.existsSync(c) ? c : 'npm';
 })();
@@ -32,6 +33,12 @@ log('Updater gestartet (Ziel: v' + newVersion + ')');
 // --- LOTRO-Prozess-Erkennung ---
 
 function isLotroRunning() {
+    if (process.platform === 'linux') {
+        var r1 = spawnSync('pgrep', ['-f', 'lotroclient'], { encoding: 'utf8' });
+        if (r1.status === 0) return true;
+        var r2 = spawnSync('pgrep', ['-f', 'proton.*212500'], { encoding: 'utf8' });
+        return r2.status === 0;
+    }
     const exes = ['lotroclient64.exe', 'lotroclient.exe'];
     for (const exe of exes) {
         try {
@@ -47,16 +54,46 @@ function isLotroRunning() {
 }
 
 function killLotro() {
+    if (process.platform === 'linux') {
+        try { spawnSync('pkill', ['-f', 'lotroclient']); } catch (e) {}
+        return;
+    }
     for (const exe of ['lotroclient64.exe', 'lotroclient.exe']) {
         try { spawnSync('taskkill', ['/F', '/IM', exe, '/T'], { windowsHide: true }); } catch (e) {}
     }
 }
 
-// Zeigt einen VBScript-Dialog. buttons: 0=OK, 4=Ja/Nein.
-// Rueckgabe: 6=Ja, 7=Nein, 1=OK, -1=Fehler.
+// Zeigt einen Dialog. Auf Linux: zenity → kdialog → notify-send + Log.
+// buttons: 0=OK, 4=Ja/Nein. Rueckgabe: 6=Ja, 7=Nein, 1=OK, -1=Fehler.
+function linuxDialog(type, title, message) {
+    if (spawnSync('which', ['zenity'], { encoding: 'utf8' }).status === 0) {
+        if (type === 'question')
+            return spawnSync('zenity', ['--question', '--title', title, '--text', message]).status === 0;
+        spawnSync('zenity', ['--' + (type === 'error' ? 'error' : 'info'), '--title', title, '--text', message]);
+        return true;
+    }
+    if (spawnSync('which', ['kdialog'], { encoding: 'utf8' }).status === 0) {
+        if (type === 'question')
+            return spawnSync('kdialog', ['--yesno', message, '--title', title]).status === 0;
+        spawnSync('kdialog', ['--msgbox', message, '--title', title]);
+        return true;
+    }
+    try { spawnSync('notify-send', [title, message]); } catch (_) {}
+    log('[DIALOG] ' + title + ': ' + message);
+    return type !== 'question';
+}
+
+// Zeigt einen VBScript-Dialog (Windows) oder linuxDialog (Linux).
+// buttons: 0=OK, 4=Ja/Nein. Rueckgabe: 6=Ja, 7=Nein, 1=OK, -1=Fehler.
 // Hinweis: windowsHide: false ist hier absichtlich – der Dialog soll sichtbar sein.
 function vbsDialog(lines, title, buttons) {
     if (typeof lines === 'string') lines = [lines];
+    if (process.platform === 'linux') {
+        const type = (buttons === 4) ? 'question' : (buttons === 16 ? 'error' : 'info');
+        const message = lines.join('\n');
+        const result = linuxDialog(type, title, message);
+        return result ? 6 : 7;
+    }
     const msgExpr = lines
         .map(function(l) { return '"' + l.replace(/"/g, '') + '"'; })
         .join(' & vbCrLf & ');
@@ -149,7 +186,9 @@ setTimeout(function() {
         // Schritt 1: npm-Pakete aktualisieren
         log('Installiere Pakete...');
         try {
-            execSync('"' + npmCmd + '" install --silent --no-progress', { cwd: dir, windowsHide: true });
+            const npmOpts = { cwd: dir };
+            if (process.platform === 'win32') npmOpts.windowsHide = true;
+            execSync('"' + npmCmd + '" install --silent --no-progress', npmOpts);
             log('Pakete installiert.');
         } catch (e) {
             log('npm install Fehler: ' + e.message);
@@ -160,7 +199,9 @@ setTimeout(function() {
         // Schritt 2: Watcher + Autostart neu generieren und starten
         log('Konfiguriere Autostart neu...');
         try {
-            execSync('"' + process.execPath + '" install-autostart.js install', { cwd: dir, windowsHide: true });
+            const iaOpts = { cwd: dir };
+            if (process.platform === 'win32') iaOpts.windowsHide = true;
+            execSync('"' + process.execPath + '" install-autostart.js install', iaOpts);
             log('Autostart konfiguriert und Watcher gestartet.');
             // Verifizieren dass lotro-watcher.js erzeugt wurde
             if (!fs.existsSync(path.join(dir, 'lotro-watcher.js'))) {
@@ -188,6 +229,51 @@ setTimeout(function() {
         (function() {
             function getLOTROPath() {
                 if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
+                var LOTRO_SUBDIR = 'The Lord of the Rings Online';
+                if (process.platform === 'linux') {
+                    var steamNative = path.join(os.homedir(), '.steam', 'steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+                    if (fs.existsSync(steamNative)) return steamNative;
+                    var steamFlatpak = path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+                    if (fs.existsSync(steamFlatpak)) return steamFlatpak;
+                    var vdfLocations = [
+                        path.join(os.homedir(), '.steam', 'steam', 'config', 'libraryfolders.vdf'),
+                        path.join(os.homedir(), '.var', 'app', 'com.valvesoftware.Steam', 'data', 'Steam', 'config', 'libraryfolders.vdf')
+                    ];
+                    for (var vi = 0; vi < vdfLocations.length; vi++) {
+                        if (!fs.existsSync(vdfLocations[vi])) continue;
+                        try {
+                            var vdfContent = fs.readFileSync(vdfLocations[vi], 'utf8');
+                            var vdfRe = /"path"\s+"([^"]+)"/g;
+                            var vm;
+                            while ((vm = vdfRe.exec(vdfContent)) !== null) {
+                                var steamCand = path.join(vm[1].trim(), 'steamapps', 'compatdata', '212500', 'pfx', 'drive_c', 'users', 'steamuser', 'My Documents', LOTRO_SUBDIR);
+                                if (fs.existsSync(steamCand)) return steamCand;
+                            }
+                        } catch (_) {}
+                    }
+                    var lutrisDir = path.join(os.homedir(), '.config', 'lutris', 'games');
+                    if (fs.existsSync(lutrisDir)) {
+                        try {
+                            var files = fs.readdirSync(lutrisDir).filter(function(f) { return (f.toLowerCase().indexOf('lord') !== -1 || f.toLowerCase().indexOf('lotro') !== -1) && f.endsWith('.yml'); });
+                            for (var fi = 0; fi < files.length; fi++) {
+                                try {
+                                    var yml = fs.readFileSync(path.join(lutrisDir, files[fi]), 'utf8');
+                                    var lm = yml.match(/(?:wine_prefix|prefix):\s*(.+)/);
+                                    if (lm) {
+                                        var uname = process.env.USER || 'user';
+                                        var candidate = path.join(lm[1].trim(), 'drive_c', 'users', uname, 'My Documents', LOTRO_SUBDIR);
+                                        if (fs.existsSync(candidate)) return candidate;
+                                    }
+                                } catch (_) {}
+                            }
+                        } catch (_) {}
+                    }
+                    // Standard Wine-Prefix (~/.wine)
+                    var wineUname = process.env.USER || 'user';
+                    var wineDefault = path.join(os.homedir(), '.wine', 'drive_c', 'users', wineUname, 'My Documents', LOTRO_SUBDIR);
+                    if (fs.existsSync(wineDefault)) return wineDefault;
+                    return path.join(os.homedir(), 'Documents', LOTRO_SUBDIR);
+                }
                 try {
                     var out = execSync(
                         'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders" /v Personal',
@@ -195,16 +281,23 @@ setTimeout(function() {
                     );
                     var m = out.match(/Personal\s+REG_SZ\s+(.+)/);
                     if (m) {
-                        var p = path.join(m[1].trim(), 'The Lord of the Rings Online');
+                        var p = path.join(m[1].trim(), LOTRO_SUBDIR);
                         if (fs.existsSync(p)) return p;
                     }
                 } catch (_) {}
-                var od = path.join(os.homedir(), 'OneDrive', 'Documents', 'The Lord of the Rings Online');
+                var od = path.join(os.homedir(), 'OneDrive', 'Documents', LOTRO_SUBDIR);
                 if (fs.existsSync(od)) return od;
-                return path.join(os.homedir(), 'Documents', 'The Lord of the Rings Online');
+                return path.join(os.homedir(), 'Documents', LOTRO_SUBDIR);
             }
 
             function downloadFileSync(url, dest) {
+                if (process.platform === 'linux') {
+                    var r = spawnSync('curl', ['-fsSL', '-o', dest, url], { encoding: 'utf8', timeout: 30000 });
+                    if (r.status !== 0) {
+                        throw new Error('curl-Fehler' + (r.stderr ? ': ' + r.stderr.trim().split('\n')[0] : ''));
+                    }
+                    return;
+                }
                 var r = spawnSync('powershell.exe', [
                     '-NoProfile', '-NonInteractive', '-Command',
                     'Invoke-WebRequest -Uri \'' + url + '\' -OutFile \'' + dest + '\' -UseBasicParsing'

@@ -21,8 +21,10 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay (Prod) | StreamElements Custom Widget |
 | `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
-| `INSTALL.bat` | Erstinstallation für Streamer | Im Distributions-ZIP |
-| `UPDATE.bat` | Upgrade v1.5 → v2.3 für bestehende Nutzer | Im Distributions-ZIP |
+| `INSTALL.bat` | Erstinstallation für Streamer (Windows) | Im Distributions-ZIP |
+| `UPDATE.bat` | Upgrade v1.5 → v2.4 für bestehende Nutzer (Windows) | Im Distributions-ZIP |
+| `INSTALL.sh` | Erstinstallation für Streamer (Linux) | Im Distributions-ZIP |
+| `UPDATE.sh` | Upgrade für bestehende Nutzer (Linux) | Im Distributions-ZIP |
 
 ---
 
@@ -109,6 +111,57 @@ LOTRO (Spiel)
 - `start-lotro-watcher.vbs` — Startet den Watcher unsichtbar (kein Konsolenfenster)
 
 Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
+
+### Linux-Kompatibilität (ab v2.4+)
+
+LOTRO läuft auf Linux via Steam+Proton (AppID 212500) oder Lutris. Alle Node.js-Dateien unterstützen beide Plattformen über `process.platform === 'linux'` Branches.
+
+**LOTRO-Pfad-Suchreihenfolge (Linux):**
+
+| Priorität | Pfad | Launcher |
+|---|---|---|
+| 1 | `~/.steam/steam/steamapps/compatdata/212500/pfx/drive_c/users/steamuser/My Documents/LOTRO` | Steam (native) |
+| 2 | `~/.var/app/com.valvesoftware.Steam/.../compatdata/212500/...` | Steam (Flatpak) |
+| 3 | `~/.config/lutris/games/*.yml` → `wine_prefix` + Profilpfad | Lutris |
+| 4 | `LOTRO_PATH` Env-Var | Manuell |
+
+**Plattformspezifische Ersetzungen:**
+
+| Windows | Linux |
+|---|---|
+| `tasklist /FI "IMAGENAME eq lotroclient*.exe"` | `pgrep -f lotroclient` + `pgrep -f "proton.*212500"` |
+| VBScript-Dialoge (wscript.exe) | zenity → kdialog → notify-send + Log |
+| Startup-Ordner + VBS | XDG `~/.config/autostart/lotro-death-tracker.desktop` |
+| `npm.cmd` | `npm` |
+| PowerShell `Invoke-WebRequest` | `curl -fsSL` |
+| `ps` via tasklist (PID-Check) | `ps -p <pid> -o comm=` |
+
+**Linux Autostart:** XDG Desktop Entry — funktioniert auf GNOME, KDE, XFCE, MATE und allen Distros mit XDG-Autostart-Unterstützung.
+
+**Installationspfad Linux:** `~/.local/share/lotro-death-tracker/` (XDG Data Home)
+
+**Linux-Commands:**
+```bash
+# Installation
+bash INSTALL.sh
+
+# Update
+bash UPDATE.sh
+
+# Manuell
+cd ~/.local/share/lotro-death-tracker
+npm run install-service    # XDG Autostart einrichten
+npm run uninstall-service  # XDG Autostart entfernen
+npm run status             # Status prüfen
+npm run test-service       # Watcher im Vordergrund testen
+
+# Mit manuellem LOTRO-Pfad
+LOTRO_PATH="/path/to/LOTRO" node client.js
+
+# Logs verfolgen
+tail -f ~/.local/share/lotro-death-tracker/watcher.log
+tail -f ~/.local/share/lotro-death-tracker/client.log
+```
 
 ### Auto-Update-System (ab v2.0)
 
@@ -338,7 +391,7 @@ Jeder Release enthält zwei ZIP-Assets:
 
 | Asset | Inhalt | Für wen |
 |---|---|---|
-| `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, `INSTALL.bat`, `UPDATE.bat`, `ANLEITUNG.md` | Streamer (Erst- und Upgrade-Installation) |
+| `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, `INSTALL.bat`, `UPDATE.bat`, `INSTALL.sh`, `UPDATE.sh`, `ANLEITUNG.md` | Streamer (Erst- und Upgrade-Installation) |
 | `lotro-death-tracker.zip` | `lotro-death-tracker/lotro-death-tracker.php` | WordPress Auto-Update-Mechanismus |
 
 **Versionsprüfung (PFLICHT vor jedem Release und Pre-Release):**
@@ -354,6 +407,7 @@ grep -m1 "^\*\*Version" ANLEITUNG.md
 grep -h "Version:" Website/lotro-data-fetcher.js
 grep -h "@v2\." Website/lotro-data-fetcher.js CLAUDE.md
 grep -h "'version'" WordPress/lotro-death-tracker.php
+grep -h "Version:" INSTALL.sh UPDATE.sh
 ```
 → Alle ausgegebenen Versionsnummern müssen `X.Y` sein. Erst wenn das stimmt, weitermachen.
 
@@ -361,7 +415,7 @@ grep -h "'version'" WordPress/lotro-death-tracker.php
 ```bash
 # 1. Staging-Verzeichnis mit Top-Level-Ordner anlegen (ZIP muss Ordner enthalten!)
 mkdir -p LOTRO-Death-Tracker-vX.Y
-cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat ANLEITUNG.md LOTRO-Death-Tracker-vX.Y/
+cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat INSTALL.sh UPDATE.sh ANLEITUNG.md LOTRO-Death-Tracker-vX.Y/
 
 # 2. Streamer-ZIP erstellen
 python3 -c "
@@ -394,14 +448,24 @@ gh release edit vX.Y --prerelease=false
 gh release edit vX.Y --latest
 ```
 
-### LOTRO-Pfad-Erkennung (INSTALL.bat, UPDATE.bat, client.js)
+### LOTRO-Pfad-Erkennung
 
-Prüfreihenfolge:
+**Windows** (INSTALL.bat, UPDATE.bat, client.js):
 1. Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders\Personal`
 2. OneDrive: `%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online`
 3. Standard: `%USERPROFILE%\Documents\The Lord of the Rings Online`
 4. **Nur INSTALL.bat:** Manuelle Eingabe via `SET /P` (Erstinstallation akzeptiert interaktiven Input)
    **UPDATE.bat:** Plugin-Update wird still übersprungen (Warnung + manuelle Kopieranleitung, kein Input-Prompt)
+
+**Linux** (client.js, install-autostart.js-Template, updater.js-IIFE):
+1. `LOTRO_PATH` Env-Var (höchste Priorität)
+2. Steam native: `~/.steam/steam/steamapps/compatdata/212500/pfx/drive_c/users/steamuser/My Documents/LOTRO`
+3. Steam Flatpak: `~/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/212500/.../LOTRO`
+4. Steam Library VDF-Scan: `libraryfolders.vdf` aller bekannten Steam-Config-Pfade — findet nicht-standard Library-Ordner (zweite Festplatte etc.)
+5. Lutris YAML-Scan: `~/.config/lutris/games/*.yml` — liest `wine_prefix:` oder `prefix:`
+6. Fallback: `~/Documents/The Lord of the Rings Online`
+
+> **KRITISCH:** `getLOTROPath()` ist dreifach implementiert: `client.js`, Watcher-Template in `install-autostart.js` (`getLotroPath()`), IIFE in `updater.js`. Bei Änderungen (neuer Pfad-Fallback, neue Launcher-Unterstützung) **alle drei Stellen synchron halten!**
 
 StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH` (1920×1080)
 
@@ -437,9 +501,11 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `Website/lotro-data-fetcher.js` CDN-URL im Header-Kommentar (`@vX.Y`) | auf `vX.Y` setzen |
 | `WordPress/lotro-death-tracker.php` Health-Endpoint `'version'` | auf `X.Y` setzen |
 | `CLAUDE.md` CDN-Einbindungs-Beispiel (`@vX.Y`) | auf `vX.Y` setzen |
+| `INSTALL.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
+| `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.4** (released 2026-03-06).
+> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.5** (released 2026-03-07).
 
 ## WordPress Plugin Auto-Update
 
@@ -452,9 +518,9 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.4/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.5/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.4` → `@v2.5` (usw.) im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.5` → `@v2.6` (usw.) im Script-Tag aktualisieren.
 
 ---
 
