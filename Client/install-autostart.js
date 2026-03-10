@@ -49,7 +49,8 @@ const ICON_YELLOW_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArUlEQVR
 const ICON_GREEN_B64  = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wqAMAjth3rus/vEYg+BDD07U4sFDoKl5za3bav19wns53F9doZmxn7poVhjiUsJIQW9e3cQr6HGmw6hiURrUyGiZhqfDqCRs2rDEFlGSAeGQMSsXgVYdwJZd8zomFNgyFGMad4aUXGGXwHWnsDb7wCeXjaZxzSLkfrD/aw4gx+a9gBGlMX02vQ/a4BwtBkCIgOrh/RcPctIq7sMPKRm7uEV55nADXqDR2+GbZoRAAAAAElFTkSuQmCC';
 var SysTrayPkg = null;
 try { SysTrayPkg = require('node-systray-v2'); } catch (_) {}
-var SysTray = SysTrayPkg ? (SysTrayPkg.default || SysTrayPkg) : null;
+var SysTray = SysTrayPkg ? (SysTrayPkg.default || SysTrayPkg.SysTray || SysTrayPkg) : null;
+if (SysTray && typeof SysTray !== 'function') SysTray = null;
 const TRAY_AVAILABLE = !!SysTray;
 
 let clientProcess = null;
