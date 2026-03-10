@@ -815,21 +815,11 @@ function isPluginActive() {
     try {
         var lotroPath = getLotroPath();
         if (!fs.existsSync(lotroPath)) return false;
-        var pluginDataDir = path.join(lotroPath, 'PluginData');
-        if (!fs.existsSync(pluginDataDir)) return false;
-        var servers = fs.readdirSync(pluginDataDir);
-        for (var si = 0; si < servers.length; si++) {
-            var serverDir = path.join(pluginDataDir, servers[si]);
-            try {
-                var chars = fs.readdirSync(serverDir);
-                for (var ci = 0; ci < chars.length; ci++) {
-                    var syncFile = path.join(serverDir, chars[ci], 'DeathTracker_Sync.plugindata');
-                    try {
-                        if (fs.existsSync(syncFile)) return true;
-                    } catch (_) {}
-                }
-            } catch (_) {}
-        }
+        // Plugin als "aktiv" erkennen wenn die Plugin-Datei installiert ist.
+        // DeathTracker_Sync.plugindata existiert erst nach dem ersten Tod/Level-Up
+        // und waere fuer frische Charaktere immer falsch – daher Plugin-Manifest pruefen.
+        var pluginFile = path.join(lotroPath, 'Plugins', 'DodasWelt', 'DeathTracker.plugin');
+        if (fs.existsSync(pluginFile)) return true;
     } catch (_) {}
     return false;
 }
