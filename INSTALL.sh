@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Linux Installer
-# Version: 2.5
+# Version: 2.6
 # Installiert den Tracker fuer LOTRO via Steam+Proton oder Lutris.
 
 set -euo pipefail
@@ -14,7 +14,7 @@ err() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] FEHLER: $*" | tee -a "$LOG" >&2; }
 
 echo ""
 echo "================================================="
-echo " LOTRO Death Tracker - Installer (Linux) v2.5"
+echo " LOTRO Death Tracker - Installer (Linux) v2.6"
 echo "================================================="
 echo ""
 
@@ -174,7 +174,7 @@ echo "Logs: $INSTALL_DIR/watcher.log"
 echo "      $INSTALL_DIR/client.log"
 echo ""
 if command -v notify-send &>/dev/null; then
-    notify-send "LOTRO Death Tracker" "Installation abgeschlossen! Version 2.5"
+    notify-send "LOTRO Death Tracker" "Installation abgeschlossen! Version 2.6"
 fi
 
 log "Installation abgeschlossen."

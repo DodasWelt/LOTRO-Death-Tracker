@@ -725,15 +725,9 @@ function isLOTRORunning(callback) {
 }
 
 function startClient() {
-    if (clientProcess && !clientProcess.killed) {
-        // .killed ist unzuverlaessig wenn der Prozess extern getoetet wurde (Antivirus, Absturz).
-        // Signal-0-Check prueft ob der OS-Prozess noch wirklich lebt.
-        var alive = false;
-        try { process.kill(clientProcess.pid, 0); alive = true; } catch (e) {}
-        if (alive) return;
-        log('Client (PID ' + clientProcess.pid + ') nicht mehr erreichbar – exit-Event ausgeblieben, starte neu.');
-        clientProcess = null;
-    }
+    // checkLOTRO() prueft bereits via Signal-0 ob der Prozess lebt und setzt clientProcess = null
+    // wenn er tot ist. Hier genuegt daher ein einfacher Null-Check als Sicherheitsnetz.
+    if (clientProcess) return;
 
     log('LOTRO erkannt - starte Client...');
     
@@ -755,16 +749,17 @@ function stopClient() {
     if (!clientProcess || clientProcess.killed) {
         return;
     }
-    
+
     log('LOTRO beendet - stoppe Client...');
-    
+
     try {
         process.kill(clientProcess.pid);
-        clientProcess = null;
         log('Client gestoppt');
     } catch (error) {
         log('Fehler beim Stoppen: ' + error.message);
     }
+    // clientProcess immer loeschen – auch wenn kill() fehlschlaegt (ESRCH = bereits tot)
+    clientProcess = null;
 }
 
 // ── Sys-Tray Hilfsfunktionen ───────────────────────────────────────────────
@@ -851,7 +846,8 @@ function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
                 icon: getIconData(newState),
                 title: '',
                 tooltip: getTrayTooltip(clientRunning, pluginActive),
-                items: []
+                // Mindestens ein Eintrag erforderlich – die Go-Binary erwartet ein nichtleeres items-Array.
+                items: [{ title: 'LOTRO Death Tracker', tooltip: '', checked: false, enabled: false }]
             },
             debug: false,
             copyDir: true
@@ -867,7 +863,17 @@ function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
 
 function checkLOTRO() {
     isLOTRORunning((lotroRunning) => {
-        const clientRunning = clientProcess && !clientProcess.killed;
+        // H3: Signal-0-Check statt unzuverlaessigem .killed-Flag.
+        // .killed ist false wenn der Prozess extern getoetet wurde (Antivirus, OOM-Killer).
+        // process.kill(pid, 0) wirft ESRCH wenn der OS-Prozess nicht mehr existiert.
+        var clientRunning = false;
+        if (clientProcess) {
+            try { process.kill(clientProcess.pid, 0); clientRunning = true; }
+            catch (e) {
+                log('Client (PID ' + clientProcess.pid + ') nicht mehr erreichbar (Signal-0: ' + e.code + ') – starte neu sobald LOTRO laeuft.');
+                clientProcess = null;
+            }
+        }
 
         // Uebergang: LOTRO gerade gestartet (nicht laufend → laufend)
         if (lotroRunning && !prevLotroRunning) {

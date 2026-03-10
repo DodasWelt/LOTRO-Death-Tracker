@@ -25,7 +25,7 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "2.5",
+    version = "2.6",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
     lastLevelWasLogged = false,

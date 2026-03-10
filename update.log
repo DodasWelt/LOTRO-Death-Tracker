@@ -1,0 +1,77 @@
+[01.03.2026 14:28:50,31] UPDATE.bat gestartet 
+[01.03.2026 14:28:50,31] Verzeichnis: F:\LOTRO-Death-Tracker-v2.0\ 
+[01.03.2026 14:28:50,35] Pruefe Admin-Rechte... 
+[01.03.2026 14:28:50,37] Admin-Check OK 
+[01.03.2026 14:28:50,37] Pruefe Installation: C:\LOTRO-Death-Tracker 
+[01.03.2026 14:28:50,38] Installation gefunden OK 
+[01.03.2026 14:28:50,39] Schritt 1: Stoppe Watcher 
+[01.03.2026 14:28:52,18] Schritt 1 OK 
+[01.03.2026 14:28:52,18] Schritt 2: Kopiere Client-Dateien 
+[01.03.2026 14:28:52,21] Schritt 2 OK 
+[01.03.2026 14:28:52,21] Suche Node.js... 
+[01.03.2026 14:28:52,31] Node.js im PATH: C:\Program Files\nodejs\node.exe 
+[01.03.2026 14:28:52,31] npm: C:\Program Files\nodejs\\npm.cmd 
+[01.03.2026 14:28:52,32] Schritt 3: npm install (NODE_CMD=C:\Program Files\nodejs\node.exe) 
+
+up to date in 555ms
+[01.03.2026 14:28:53,10] Schritt 3 OK 
+[01.03.2026 14:28:53,11] Schritt 4: Plugin-Update 
+[01.03.2026 14:28:53,11] Schritt 4: Suche LOTRO-Pfad via Registry... 
+[01.03.2026 14:28:53,13] Schritt 4: DOCS_PATH=C:\Users\Michael\Documents 
+[01.03.2026 14:28:53,14] Schritt 4: LOTRO-Pfad gefunden: C:\Users\Michael\Documents\The Lord of the Rings Online 
+[01.03.2026 14:28:53,15] Schritt 4: Kopiere Plugin-Dateien... 
+[01.03.2026 14:28:53,16] Schritt 4 OK - Plugin aktualisiert 
+[01.03.2026 14:28:53,16] Schritt 5: install-autostart.js 
+═════════════════════════════════════════════════
+🎮 LOTRO Death Tracker - Smart Autostart
+═════════════════════════════════════════════════
+
+Installation über Windows Startup-Ordner...
+(Funktioniert auf jedem Windows-PC!)
+
+📁 Startup-Ordner: C:\Users\Michael\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup
+
+Erstelle Watcher-Script...
+✅ Watcher-Script erstellt: C:\LOTRO-Death-Tracker\lotro-watcher.js
+Erstelle VBS-Start-Script...
+✅ VBS-Start-Script erstellt: C:\LOTRO-Death-Tracker\start-lotro-watcher.vbs
+
+Kopiere in Startup-Ordner...
+✅ VBS kopiert nach: C:\Users\Michael\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs
+
+═════════════════════════════════════════════════
+✅ Smart Autostart erfolgreich installiert!
+═════════════════════════════════════════════════
+
+✨ Wie es funktioniert:
+  1. Windows startet → Watcher startet (unsichtbar)
+  2. Du startest LOTRO → Client startet automatisch
+  3. Du beendest LOTRO → Client stoppt automatisch
+
+🎯 Vorteile:
+  ✅ Komplett unsichtbar
+  ✅ Läuft nur wenn LOTRO läuft
+  ✅ Kein Task Scheduler nötig
+  ✅ Funktioniert auf jedem Windows
+
+🚀 Starte Watcher JETZT im Hintergrund...
+
+✅ Watcher läuft jetzt im Hintergrund!
+
+🎮 Du kannst jetzt sofort LOTRO starten:
+   → Watcher erkennt LOTRO automatisch
+   → Client startet automatisch
+   → Keine weitere Aktion nötig!
+
+📊 Prüfen ob es funktioniert:
+  1. Starte LOTRO
+  2. Warte 5-10 Sekunden
+  3. Task-Manager → Details → node.exe
+  4. Sollte 2x laufen (Watcher + Client)
+
+📝 Logs:
+  Watcher: C:\LOTRO-Death-Tracker\watcher.log
+  Client:  C:\LOTRO-Death-Tracker\client.log
+
+═════════════════════════════════════════════════
+[01.03.2026 14:28:53,22] Schritt 5: install-autostart.js exitCode=0 

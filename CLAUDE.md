@@ -533,7 +533,7 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Letzter GitHub-Release ist **v2.5** Pre-Release (released 2026-03-07). Code-Stand enthält v2.6-Features (Sys-Tray, Bug-Fixes H3/H6/H7) — noch nicht released.
+> **Aktueller Stand:** Letzter GitHub-Release ist **v2.5** Pre-Release (released 2026-03-07). Code-Stand: **v2.6** (Sys-Tray, Bug-Fixes H3/H6/H7) — noch nicht released.
 
 ## WordPress Plugin Auto-Update
 
@@ -546,9 +546,9 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.5/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.6/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.5` → `@v2.6` (usw.) im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.6` → `@v2.7` (usw.) im Script-Tag aktualisieren.
 
 ---
 
