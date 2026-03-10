@@ -37,10 +37,27 @@ const PID_FILE         = path.join(__dirname, 'watcher.pid');
 const LOCAL_DEATHS_FILE = path.join(__dirname, 'deaths.local.json');
 const WP_API           = 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1';
 
+// ── Sys-Tray ───────────────────────────────────────────────────────────────
+// Eigene Icon-Dateipfade (absoluter Pfad oder leer fuer eingebettete Minimal-Icons).
+// Zum Anpassen: Pfad zu einer 32x32 PNG-Datei eintragen.
+const CUSTOM_ICON_RED    = '';
+const CUSTOM_ICON_YELLOW = '';
+const CUSTOM_ICON_GREEN  = '';
+// Eingebettete Minimal-Icons: 32x32 PNG, einfarbige Kreise auf transparentem Hintergrund.
+const ICON_RED_B64    = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wnAIAzsQu6/Rxdq8aMQJDkvjxYLCgWb3Mvocez19wmcrV2fnaGbsV95KNZY4kpCSMHoPhwkaqjx3CE0kWzNFSJrpvHpABq5qjYNUWWEdGAIRKzq7QDrTqDqjhkdcwoMOYsxzXsjK87wd4C1J/D2O4Cnl03mMXkxUn+694oz+KnpCGBEWcyoTf+zBghHmyEgMrB6SC/Us4y0esggQurmEd7mPBO4ASzbexgj/DOTAAAAAElFTkSuQmCC';
+const ICON_YELLOW_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArUlEQVR4Ae1S2wnAIAx0/1E6Thdq8aMQJDkvjxYLCgWb3Mtoa3v9fQLn0a7PztDN2K88FGsscSUhpGB0Hw4SNdR47hCaSLbmCpE10/h0AI1cVZuGqDJCOjAEIlb1doB1J1B1x4yOOQWGnMWY5r2RFWf4O8DaE3j7HcDTyybzmLwYqT/de8UZ/NR0BDCiLGbUpv9ZA4SjzRAQGVg9pBfqWUZaPWQQIXXzCG9zngncC90gdxQY2r4AAAAASUVORK5CYII=';
+const ICON_GREEN_B64  = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wqAMAjth3rus/vEYg+BDD07U4sFDoKl5za3bav19wns53F9doZmxn7poVhjiUsJIQW9e3cQr6HGmw6hiURrUyGiZhqfDqCRs2rDEFlGSAeGQMSsXgVYdwJZd8zomFNgyFGMad4aUXGGXwHWnsDb7wCeXjaZxzSLkfrD/aw4gx+a9gBGlMX02vQ/a4BwtBkCIgOrh/RcPctIq7sMPKRm7uEV55nADXqDR2+GbZoRAAAAAElFTkSuQmCC';
+var SysTrayPkg = null;
+try { SysTrayPkg = require('node-systray-v2'); } catch (_) {}
+var SysTray = SysTrayPkg ? (SysTrayPkg.default || SysTrayPkg) : null;
+const TRAY_AVAILABLE = !!SysTray;
+
 let clientProcess = null;
 let checkInterval = null;
 var prevLotroRunning = false;
 var remindOnNextStart = false;
+var trayInstance   = null;
+var lastTrayState  = 'none';
 
 function formatLocalTime(d) {
     var pad = function(n, w) { return String(n).padStart(w || 2, '0'); };
@@ -709,9 +726,15 @@ function isLOTRORunning(callback) {
 
 function startClient() {
     if (clientProcess && !clientProcess.killed) {
-        return;
+        // .killed ist unzuverlaessig wenn der Prozess extern getoetet wurde (Antivirus, Absturz).
+        // Signal-0-Check prueft ob der OS-Prozess noch wirklich lebt.
+        var alive = false;
+        try { process.kill(clientProcess.pid, 0); alive = true; } catch (e) {}
+        if (alive) return;
+        log('Client (PID ' + clientProcess.pid + ') nicht mehr erreichbar – exit-Event ausgeblieben, starte neu.');
+        clientProcess = null;
     }
-    
+
     log('LOTRO erkannt - starte Client...');
     
     clientProcess = spawn(process.execPath, [CLIENT_PATH], {
@@ -744,6 +767,104 @@ function stopClient() {
     }
 }
 
+// ── Sys-Tray Hilfsfunktionen ───────────────────────────────────────────────
+
+function isPluginActive() {
+    try {
+        var lotroPath = getLotroPath();
+        if (!fs.existsSync(lotroPath)) return false;
+        var pluginDataDir = path.join(lotroPath, 'PluginData');
+        if (!fs.existsSync(pluginDataDir)) return false;
+        var cutoff = Date.now() - 5 * 60 * 1000;
+        var servers = fs.readdirSync(pluginDataDir);
+        for (var si = 0; si < servers.length; si++) {
+            var serverDir = path.join(pluginDataDir, servers[si]);
+            try {
+                var chars = fs.readdirSync(serverDir);
+                for (var ci = 0; ci < chars.length; ci++) {
+                    var syncFile = path.join(serverDir, chars[ci], 'DeathTracker_Sync.plugindata');
+                    try {
+                        if (fs.existsSync(syncFile) && fs.statSync(syncFile).mtimeMs > cutoff) return true;
+                    } catch (_) {}
+                }
+            } catch (_) {}
+        }
+    } catch (_) {}
+    return false;
+}
+
+function getTrayState(lotroRunning, clientRunning, pluginActive) {
+    if (!lotroRunning) return 'none';
+    if (clientRunning && pluginActive) return 'green';
+    if (clientRunning || pluginActive) return 'yellow';
+    return 'red';
+}
+
+function getIconData(color) {
+    var custom = color === 'red' ? CUSTOM_ICON_RED : (color === 'yellow' ? CUSTOM_ICON_YELLOW : CUSTOM_ICON_GREEN);
+    if (custom) {
+        try { if (fs.existsSync(custom)) return fs.readFileSync(custom).toString('base64'); } catch (_) {}
+    }
+    if (color === 'red')    return ICON_RED_B64;
+    if (color === 'yellow') return ICON_YELLOW_B64;
+    return ICON_GREEN_B64;
+}
+
+function getTrayTooltip(clientRunning, pluginActive) {
+    return 'LOTRO Death Tracker\n' +
+        'Watcher:  laeuft\n' +
+        'Client:   ' + (clientRunning ? 'laeuft' : 'nicht gestartet') + '\n' +
+        'Plugin:   ' + (pluginActive  ? 'erkannt' : 'nicht erkannt');
+}
+
+function destroyTray() {
+    if (trayInstance) {
+        try { trayInstance.kill(); } catch (_) {}
+        trayInstance = null;
+        log('[TRAY] Icon entfernt.');
+    }
+}
+
+function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
+    if (newState === lastTrayState) return;
+    var oldState = lastTrayState;
+    lastTrayState = newState;
+    log('[TRAY] Status: ' + oldState.toUpperCase() + ' \u2192 ' + newState.toUpperCase() +
+        '  (LOTRO: ' + (lotroRunning    ? '\u2713' : '\u2717') +
+        '  Client: ' + (clientRunning   ? '\u2713' : '\u2717') +
+        '  Plugin: ' + (pluginActive    ? '\u2713' : '\u2717') + ')');
+
+    if (!TRAY_AVAILABLE) {
+        // Linux-Fallback ohne Tray-Bibliothek: notify-send bei Zustandswechseln
+        if (process.platform === 'linux' && newState !== 'none') {
+            try { spawnSync('notify-send', ['LOTRO Death Tracker', getTrayTooltip(clientRunning, pluginActive)]); } catch (_) {}
+        }
+        return;
+    }
+
+    destroyTray();
+    if (newState === 'none') return;
+
+    try {
+        var st = new SysTray({
+            menu: {
+                icon: getIconData(newState),
+                title: '',
+                tooltip: getTrayTooltip(clientRunning, pluginActive),
+                items: []
+            },
+            debug: false,
+            copyDir: true
+        });
+        st.onClick(function() {});
+        trayInstance = st;
+    } catch (e) {
+        log('[TRAY] Fehler beim Erstellen: ' + e.message);
+    }
+}
+
+// ── Ende Sys-Tray ──────────────────────────────────────────────────────────
+
 function checkLOTRO() {
     isLOTRORunning((lotroRunning) => {
         const clientRunning = clientProcess && !clientProcess.killed;
@@ -763,12 +884,17 @@ function checkLOTRO() {
         } else if (!lotroRunning && clientRunning) {
             stopClient();
         }
+
+        // Tray-Status aktualisieren (alle 5s, aber nur bei Aenderung wirksam)
+        var pluginActive = isPluginActive();
+        updateTray(getTrayState(lotroRunning, clientRunning, pluginActive), lotroRunning, clientRunning, pluginActive);
     });
 }
 
 log('=================================');
 log('LOTRO Watcher gestartet');
 log('Ueberwacht: ' + (process.platform === 'linux' ? 'lotroclient (pgrep) + proton/212500' : 'lotroclient64.exe & lotroclient.exe'));
+log('Sys-Tray: ' + (TRAY_AVAILABLE ? 'verfuegbar' : 'nicht verfuegbar' + (process.platform === 'linux' ? ' (notify-send Fallback)' : ' – node-systray-v2 nicht geladen')));
 log('=================================');
 
 // Singleton-Lock: verhindert mehrfachen Start (wuerde mehrere Clients → doppelte Events erzeugen)
@@ -806,6 +932,7 @@ process.on('SIGINT', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
+    destroyTray();
     releaseLock();
     process.exit(0);
 });
@@ -814,11 +941,12 @@ process.on('SIGTERM', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
+    destroyTray();
     releaseLock();
     process.exit(0);
 });
 
-process.on('exit', releaseLock);
+process.on('exit', function() { try { destroyTray(); } catch (_) {} releaseLock(); });
 `;
     
     fs.writeFileSync(WATCHER_JS, watcherContent, 'utf8');

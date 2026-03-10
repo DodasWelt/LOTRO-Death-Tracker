@@ -196,6 +196,15 @@ setTimeout(function() {
             // Nicht abbrechen – install-autostart koennte trotzdem funktionieren
         }
 
+        // Pruefen ob kritische npm-Pakete vorhanden sind (Antivirus kann npm install partiell blockieren)
+        var missingMods = ['chokidar', 'axios'].filter(function(m) {
+            return !fs.existsSync(path.join(dir, 'node_modules', m));
+        });
+        if (missingMods.length > 0) {
+            log('Fehlende npm-Pakete nach install: ' + missingMods.join(', '));
+            errors.push('npm-Pakete fehlen (' + missingMods.join(', ') + ') – bitte "npm install" manuell ausfuehren in: ' + dir);
+        }
+
         // Schritt 2: Watcher + Autostart neu generieren und starten
         log('Konfiguriere Autostart neu...');
         try {
@@ -291,18 +300,24 @@ setTimeout(function() {
             }
 
             function downloadFileSync(url, dest) {
+                // Staging: erst in .tmp schreiben, dann umbenennen.
+                // Verhindert korrumpierte Zieldateien bei Abbruch (Netzwerkfehler, Antivirus-Interrupt).
+                var tmp = dest + '.tmp';
                 if (process.platform === 'linux') {
-                    var r = spawnSync('curl', ['-fsSL', '-o', dest, url], { encoding: 'utf8', timeout: 30000 });
+                    var r = spawnSync('curl', ['-fsSL', '-o', tmp, url], { encoding: 'utf8', timeout: 30000 });
                     if (r.status !== 0) {
+                        try { fs.unlinkSync(tmp); } catch (_) {}
                         throw new Error('curl-Fehler' + (r.stderr ? ': ' + r.stderr.trim().split('\n')[0] : ''));
                     }
+                    try { fs.renameSync(tmp, dest); } catch (e) { try { fs.unlinkSync(tmp); } catch (_) {} throw e; }
                     return;
                 }
                 var r = spawnSync('powershell.exe', [
                     '-NoProfile', '-NonInteractive', '-Command',
-                    'Invoke-WebRequest -Uri \'' + url + '\' -OutFile \'' + dest + '\' -UseBasicParsing'
+                    'Invoke-WebRequest -Uri \'' + url + '\' -OutFile \'' + tmp + '\' -UseBasicParsing; if ($?) { Move-Item -Force \'' + tmp + '\' \'' + dest + '\' }'
                 ], { windowsHide: true, timeout: 30000 });
                 if (r.status !== 0) {
+                    try { fs.unlinkSync(tmp); } catch (_) {}
                     throw new Error('HTTP-Fehler' + (r.stderr ? ': ' + r.stderr.toString().trim().split('\n')[0] : ''));
                 }
             }

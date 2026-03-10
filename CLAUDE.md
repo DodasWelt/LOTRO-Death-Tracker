@@ -107,10 +107,32 @@ LOTRO (Spiel)
 ### Autostart-System
 
 `install-autostart.js` generiert zwei Dateien dynamisch (NICHT versioniert, zur Laufzeit erstellt):
-- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung.
+- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung. Zeigt **Sys-Tray-Icon** (ab v2.6).
 - `start-lotro-watcher.vbs` — Startet den Watcher unsichtbar (kein Konsolenfenster)
 
 Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
+
+### Sys-Tray Status-Icon (ab v2.6, in Entwicklung)
+
+Der Watcher zeigt ein farbiges Tray-Icon das den Status aller Tracker-Komponenten signalisiert:
+
+| Icon | Bedeutung |
+|---|---|
+| Kein Icon | LOTRO läuft nicht (Watcher wartet) |
+| Rot | LOTRO läuft, aber Client ODER Plugin nicht aktiv |
+| Gelb | LOTRO + Client aktiv, aber Plugin noch nicht detektiert (oder umgekehrt) |
+| Grün | LOTRO + Client + Plugin alle aktiv |
+
+**Plugin "aktiv":** `DeathTracker_Sync.plugindata` existiert mit mtime < 5 Minuten.
+
+**Implementierung:**
+- Abhängigkeit: `node-systray-v2` — verwendet vorkompilierte Go-Binaries (`tray_windows.exe`, `tray_linux`), **kein node-gyp / C++ Build Tools** erforderlich.
+- Fork: `github:DodasWelt/node-systray-v2#de21859b14596e8ca1c7437f783a92befc38ab46` (pinned SHA)
+- Icons: 32×32 PNG, einfarbige Kreise, als Base64 eingebettet in `ICON_RED_B64`, `ICON_YELLOW_B64`, `ICON_GREEN_B64`.
+- Custom-Icon-Pfade: `CUSTOM_ICON_RED/YELLOW/GREEN` — absoluter Pfad zu eigener 32×32 PNG-Datei oder leer für Defaults.
+- Linux-Fallback: Wenn `node-systray-v2` nicht verfügbar (`TRAY_AVAILABLE = false`), wird bei Statuswechsel ein `notify-send`-Toast gesendet.
+- Funktionen im Watcher-Template: `isPluginActive()`, `getTrayState()`, `getIconData()`, `getTrayTooltip()`, `destroyTray()`, `updateTray()`.
+- `destroyTray()` wird in SIGINT, SIGTERM und `process.on('exit')` aufgerufen.
 
 ### Linux-Kompatibilität (ab v2.4+)
 
@@ -297,6 +319,12 @@ LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt 
 17. **`goto`-basierte Kontrollstruktur in BAT-Dateien** — Multi-line `if (...) else (...)` Blöcke nach `call`-Befehlen können CMD dazu bringen, das Skript still abzubrechen (kein Fehlercode, kein Output). Deshalb: nach jedem `call` sofort `set "EC=%errorLevel%"` (noch VOR dem nächsten `echo`, da `echo` `%errorLevel%` zurücksetzt), dann `if "%EC%" neq "0" goto :error_label`. Dieses Muster ist in INSTALL.bat und UPDATE.bat konsequent durchgezogen.
 
 18. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
+
+19. **H3-Fix: Signal-0-Check in `startClient()`** — `clientProcess.killed` ist `false` wenn der Prozess durch Antivirus oder externe Kill-Signale beendet wurde (Node.js setzt das Flag nur bei explizitem `.kill()`-Aufruf). Deshalb zusätzlich `process.kill(pid, 0)` als Liveness-Check: wirft keine Exception = Prozess lebt; ESRCH = Prozess tot → `clientProcess = null` + Neustart. **Nur im Watcher-Template** (`createWatcherScript()` in `install-autostart.js`).
+
+20. **H7-Fix: Staging in `downloadFileSync()` (`updater.js`)** — Plugin-Dateien werden zuerst als `.tmp` heruntergeladen, dann atomar umbenannt. Direktes Schreiben in `Main.lua` kann bei Abbruch/Fehler eine kaputte Datei hinterlassen, die LOTRO als defekt markiert und eine vollständige Plugin-Ordner-Löschung + Neuinstallation erfordert. Windows: PowerShell `Invoke-WebRequest -OutFile tmp` + `Move-Item -Force tmp dest`. Linux: `curl -fsSL -o tmp url` + `renameSync`.
+
+21. **H6-Fix: npm-Pakete-Existenz-Check nach `npm install` (`updater.js`)** — Nach `npm install` wird geprüft ob `chokidar` und `axios` in `node_modules/` existieren. Antivirus kann `npm install` scheinbar erfolgreich beenden (Exit-Code 0), aber danach Dateien löschen → stiller `MODULE_NOT_FOUND`-Crash beim nächsten Client-Start. Bei fehlenden Paketen wird ein deutlicher Fehler in die Fehlerliste + Abschluss-Dialog aufgenommen.
 
 ---
 
@@ -505,7 +533,7 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.5** (released 2026-03-07).
+> **Aktueller Stand:** Letzter GitHub-Release ist **v2.5** Pre-Release (released 2026-03-07). Code-Stand enthält v2.6-Features (Sys-Tray, Bug-Fixes H3/H6/H7) — noch nicht released.
 
 ## WordPress Plugin Auto-Update
 
