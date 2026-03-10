@@ -322,6 +322,16 @@ function syncLocalDeaths() {
     log('syncLocalDeaths: ' + stateFiles.length + ' Charakter(e) gefunden – pruefe Datenbank...');
 
     var localDeaths = loadLocalDeaths();
+
+    // Warnung fuer Charaktere, die in deaths.local.json bekannt sind, aber kein State-File mehr haben.
+    // Haeufigste Ursache: Charakter umbenannt oder LOTRO neu installiert.
+    var foundCharNamesNorm = stateFiles.map(function(e) { return e.charName.toLowerCase().trim(); });
+    Object.keys(localDeaths.characters).forEach(function(savedName) {
+        if (foundCharNamesNorm.indexOf(savedName.toLowerCase().trim()) === -1) {
+            log('syncLocalDeaths [' + savedName + ']: WARNUNG – kein State-File mehr gefunden. Charakter umbenannt oder LOTRO neu installiert?');
+        }
+    });
+
     var idx = 0;
 
     function processNext() {
@@ -356,6 +366,7 @@ function syncLocalDeaths() {
                 if (!localDeaths.characters[charName]) {
                     localDeaths.characters[charName] = {
                         baselineServer: currentServer,
+                        baselinePlugin: currentPlugin,
                         firstSeenAt: new Date().toISOString()
                     };
                     saveLocalDeaths(localDeaths);
@@ -365,9 +376,34 @@ function syncLocalDeaths() {
                 }
 
                 var baselineServer = localDeaths.characters[charName].baselineServer;
-                var missing = currentPlugin - (currentServer - baselineServer);
+                var baselinePlugin = localDeaths.characters[charName].baselinePlugin;
+
+                // Migration: Alter Eintrag (vor v2.6) ohne baselinePlugin – Baseline neu setzen,
+                // da ohne Plugin-Ausgangswert keine korrekte Differenzberechnung moeglich ist.
+                if (baselinePlugin === undefined || baselinePlugin === null) {
+                    localDeaths.characters[charName].baselineServer = currentServer;
+                    localDeaths.characters[charName].baselinePlugin = currentPlugin;
+                    saveLocalDeaths(localDeaths);
+                    log('syncLocalDeaths [' + charName + ']: Baseline auf v2.6 migriert (Server: ' + currentServer + ', Plugin: ' + currentPlugin + ').');
+                    processNext();
+                    return;
+                }
+
+                // Schutzpruefung: Server-Stand kann normalerweise nicht sinken.
+                // currentServer < baselineServer deutet auf DB-Reset oder Datenverlust hin.
+                if (currentServer < baselineServer) {
+                    var serverDelta = baselineServer - currentServer;
+                    log('syncLocalDeaths [' + charName + ']: WARNUNG – Server-Stand (' + currentServer + ') liegt um ' + serverDelta + ' unter Baseline (' + baselineServer + '). Moeglicherweise wurde die Datenbank zurueckgesetzt oder Eintraege wurden geloescht. Baseline wird neu gesetzt – bitte DB-Stand pruefen!');
+                    localDeaths.characters[charName].baselineServer = currentServer;
+                    localDeaths.characters[charName].baselinePlugin = currentPlugin;
+                    saveLocalDeaths(localDeaths);
+                    processNext();
+                    return;
+                }
+
+                var missing = (currentPlugin - baselinePlugin) - (currentServer - baselineServer);
                 if (missing <= 0) {
-                    log('syncLocalDeaths [' + charName + ']: Alles synchron (Plugin: ' + currentPlugin + ', Server: ' + currentServer + ', Baseline: ' + baselineServer + ').');
+                    log('syncLocalDeaths [' + charName + ']: Alles synchron (Plugin: ' + currentPlugin + '/' + baselinePlugin + ', Server: ' + currentServer + '/' + baselineServer + ').');
                     processNext();
                     return;
                 }

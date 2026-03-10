@@ -11,7 +11,7 @@
 --        Datenformat (kein externer Netzwerkzugriff aus diesem Script heraus).
 --
 -- Autor:   DodasWelt / Herrin Inge (https://www.dodaswelt.de)
--- Version: 2.4
+-- Version: 2.6
 -- Lizenz:  Keine schaedlichen Aktionen. Offen einsehbarer Quellcode.
 -- =============================================================================
 

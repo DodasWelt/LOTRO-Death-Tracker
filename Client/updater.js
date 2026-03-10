@@ -185,24 +185,38 @@ setTimeout(function() {
 
         // Schritt 1: npm-Pakete aktualisieren
         log('Installiere Pakete...');
+        var npmInstallOk = false;
         try {
             const npmOpts = { cwd: dir };
             if (process.platform === 'win32') npmOpts.windowsHide = true;
             execSync('"' + npmCmd + '" install --silent --no-progress', npmOpts);
             log('Pakete installiert.');
+            npmInstallOk = true;
         } catch (e) {
             log('npm install Fehler: ' + e.message);
-            errors.push('npm install fehlgeschlagen: ' + e.message.trim().split('\n')[0]);
-            // Nicht abbrechen – install-autostart koennte trotzdem funktionieren
+            // Pruefen ob essentielle Pakete trotzdem vorhanden sind.
+            // Wenn ja, scheiterte wahrscheinlich nur das optionale node-systray-v2 (z.B. Netzwerk,
+            // Antivirus) – kein Einfluss auf Kernfunktionen. Kein Fehler-Dialog in diesem Fall.
+            var essentialOk = ['chokidar', 'axios'].every(function(m) {
+                return fs.existsSync(path.join(dir, 'node_modules', m));
+            });
+            if (essentialOk) {
+                log('Essentielle Pakete vorhanden – Watcher laeuft ohne Sys-Tray-Icon (node-systray-v2 nicht installiert).');
+            } else {
+                errors.push('npm install fehlgeschlagen: ' + e.message.trim().split('\n')[0]);
+            }
         }
 
         // Pruefen ob kritische npm-Pakete vorhanden sind (Antivirus kann npm install partiell blockieren)
-        var missingMods = ['chokidar', 'axios'].filter(function(m) {
-            return !fs.existsSync(path.join(dir, 'node_modules', m));
-        });
-        if (missingMods.length > 0) {
-            log('Fehlende npm-Pakete nach install: ' + missingMods.join(', '));
-            errors.push('npm-Pakete fehlen (' + missingMods.join(', ') + ') – bitte "npm install" manuell ausfuehren in: ' + dir);
+        // Nur pruefen wenn npm install zuvor erfolgreich war (sonst bereits oben behandelt).
+        if (npmInstallOk) {
+            var missingMods = ['chokidar', 'axios'].filter(function(m) {
+                return !fs.existsSync(path.join(dir, 'node_modules', m));
+            });
+            if (missingMods.length > 0) {
+                log('Fehlende npm-Pakete nach install: ' + missingMods.join(', '));
+                errors.push('npm-Pakete fehlen (' + missingMods.join(', ') + ') – bitte "npm install" manuell ausfuehren in: ' + dir);
+            }
         }
 
         // Schritt 2: Watcher + Autostart neu generieren und starten

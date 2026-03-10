@@ -9,7 +9,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
-> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen. `RISIKOANALYSE-v2.6.md` — v2.6-Analyse + Sys-Tray-Risiken + syncLocalDeaths-Korrekturen.
 
 ### Repository-Struktur
 
@@ -22,7 +22,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
 | `INSTALL.bat` | Erstinstallation für Streamer (Windows) | Im Distributions-ZIP |
-| `UPDATE.bat` | Upgrade v1.5 → v2.4 für bestehende Nutzer (Windows) | Im Distributions-ZIP |
+| `UPDATE.bat` | Upgrade für bestehende Nutzer (Windows) | Im Distributions-ZIP |
 | `INSTALL.sh` | Erstinstallation für Streamer (Linux) | Im Distributions-ZIP |
 | `UPDATE.sh` | Upgrade für bestehende Nutzer (Linux) | Im Distributions-ZIP |
 
@@ -112,7 +112,7 @@ LOTRO (Spiel)
 
 Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
 
-### Sys-Tray Status-Icon (ab v2.6, in Entwicklung)
+### Sys-Tray Status-Icon (ab v2.6)
 
 Der Watcher zeigt ein farbiges Tray-Icon das den Status aller Tracker-Komponenten signalisiert:
 
@@ -533,7 +533,7 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Letzter GitHub-Release ist **v2.5** Pre-Release (released 2026-03-07). Code-Stand: **v2.6** (Sys-Tray, Bug-Fixes H3/H6/H7) — noch nicht released.
+> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.6** (released 2026-03-10).
 
 ## WordPress Plugin Auto-Update
 
@@ -549,6 +549,22 @@ Einbindung auf `herrin-inge.de` via jsDelivr:
 <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.6/Website/lotro-data-fetcher.js"></script>
 ```
 Bei neuem Release: `@v2.6` → `@v2.7` (usw.) im Script-Tag aktualisieren.
+
+---
+
+## syncLocalDeaths — Lokaler Tod-Abgleich (ab v2.4, Formel-Fix in v2.6)
+
+`deaths.local.json` speichert pro Charakter: `{ "baselineServer": N, "baselinePlugin": M, "firstSeenAt": "..." }`
+
+**Formel (korrekt ab v2.6):**
+```
+missing = (currentPlugin - baselinePlugin) - (currentServer - baselineServer)
+```
+- `currentPlugin` = `totalDeathsTrackedLocally` aus `DeathTracker_State.plugindata` (kumulativer Lifetime-Counter)
+- `baselinePlugin` **PFLICHT** — ohne ihn entstehen Phantomtode (Bug v2.4/v2.5: `baselinePlugin` fehlte)
+- **Migration v2.6**: Alte Einträge ohne `baselinePlugin` → Baseline automatisch neu gesetzt (Log: "Baseline auf v2.6 migriert")
+- **DB-Reset-Schutz**: `currentServer < baselineServer` → Log-Warnung + Baseline-Reset
+- **Charakter-Umbenennung**: Bekannte Charaktere ohne State-File → Log-Warnung
 
 ---
 
