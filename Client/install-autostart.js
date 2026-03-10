@@ -393,6 +393,7 @@ function syncLocalDeaths() {
             });
         }).on('error', function(e) {
             log('syncLocalDeaths: Netzwerkfehler – uebersprungen: ' + e.message);
+            processNext(); // naechsten Charakter trotzdem verarbeiten
         });
     }
 
@@ -821,17 +822,24 @@ function destroyTray() {
 }
 
 function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
-    if (newState === lastTrayState) return;
+    // Fuer den TRAY_AVAILABLE-Pfad: auch updaten wenn trayInstance fehlt obwohl sie existieren sollte
+    // (z.B. nach fehlgeschlagenem SysTray-Konstruktor). Verhindert dauerhaft fehlendes Icon.
+    var trayMissing = TRAY_AVAILABLE && (newState !== 'none' && trayInstance === null);
+    if (newState === lastTrayState && !trayMissing) return;
+
     var oldState = lastTrayState;
-    lastTrayState = newState;
-    log('[TRAY] Status: ' + oldState.toUpperCase() + ' \u2192 ' + newState.toUpperCase() +
-        '  (LOTRO: ' + (lotroRunning    ? '\u2713' : '\u2717') +
-        '  Client: ' + (clientRunning   ? '\u2713' : '\u2717') +
-        '  Plugin: ' + (pluginActive    ? '\u2713' : '\u2717') + ')');
+    // lastTrayState nur bei echtem Zustandswechsel loggen und setzen
+    if (newState !== oldState) {
+        lastTrayState = newState;
+        log('[TRAY] Status: ' + oldState.toUpperCase() + ' \u2192 ' + newState.toUpperCase() +
+            '  (LOTRO: ' + (lotroRunning    ? '\u2713' : '\u2717') +
+            '  Client: ' + (clientRunning   ? '\u2713' : '\u2717') +
+            '  Plugin: ' + (pluginActive    ? '\u2713' : '\u2717') + ')');
+    }
 
     if (!TRAY_AVAILABLE) {
-        // Linux-Fallback ohne Tray-Bibliothek: notify-send bei Zustandswechseln
-        if (process.platform === 'linux' && newState !== 'none') {
+        // Linux-Fallback ohne Tray-Bibliothek: notify-send nur bei Zustandswechseln (nicht bei Retries)
+        if (process.platform === 'linux' && newState !== 'none' && newState !== oldState) {
             try { spawnSync('notify-send', ['LOTRO Death Tracker', getTrayTooltip(clientRunning, pluginActive)]); } catch (_) {}
         }
         return;
@@ -856,6 +864,8 @@ function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
         trayInstance = st;
     } catch (e) {
         log('[TRAY] Fehler beim Erstellen: ' + e.message);
+        // lastTrayState zuruecksetzen: naechster Tick erkennt Zustandsaenderung und versucht erneut
+        lastTrayState = oldState;
     }
 }
 

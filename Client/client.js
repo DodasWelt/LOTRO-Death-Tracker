@@ -257,13 +257,17 @@ async function processSyncFile(filePath) {
             // Parse the event data (it's a JSON string in the content field)
             let eventData;
             try {
+                if (!syncData.content) {
+                    log(`Event content field missing or empty (eventType: ${eventType})`, 'error');
+                    return;
+                }
                 // The content field is a string containing escaped JSON
                 // We need to unescape it first by replacing \" with "
                 const unescapedContent = syncData.content.replace(/\\"/g, '"');
                 eventData = JSON.parse(unescapedContent);
             } catch (error) {
                 log(`Error parsing event content: ${error.message}`, 'error');
-                log(`Content was: ${syncData.content.substring(0, 200)}`, 'error');
+                log(`Content was: ${syncData.content ? syncData.content.substring(0, 200) : '(undefined)'}`, 'error');
                 return;
             }
             
