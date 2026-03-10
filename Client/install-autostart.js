@@ -19,6 +19,15 @@ const SHORTCUT_PATH = IS_LINUX
     ? path.join(os.homedir(), '.config', 'autostart', 'lotro-death-tracker.desktop')
     : path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 
+// Icon-Daten fuer Sys-Tray: werden beim Generieren des Watcher-Scripts eingebettet.
+// Windows benoetigt ICO-Format; Linux/Mac verwenden PNG.
+const ICON_RED_PNG_B64    = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wnAIAzsQu6/Rxdq8aMQJDkvjxYLCgWb3Mvocez19wmcrV2fnaGbsV95KNZY4kpCSMHoPhwkaqjx3CE0kWzNFSJrpvHpABq5qjYNUWWEdGAIRKzq7QDrTqDqjhkdcwoMOYsxzXsjK87wd4C1J/D2O4Cnl03mMXkxUn+694oz+KnpCGBEWcyoTf+zBghHmyEgMrB6SC/Us4y0esggQurmEd7mPBO4ASzbexgj/DOTAAAAAElFTkSuQmCC';
+const ICON_YELLOW_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArUlEQVR4Ae1S2wnAIAx0/1E6Thdq8aMQJDkvjxYLCgWb3Mtoa3v9fQLn0a7PztDN2K88FGsscSUhpGB0Hw4SNdR47hCaSLbmCpE10/h0AI1cVZuGqDJCOjAEIlb1doB1J1B1x4yOOQWGnMWY5r2RFWf4O8DaE3j7HcDTyybzmLwYqT/de8UZ/NR0BDCiLGbUpv9ZA4SjzRAQGVg9pBfqWUZaPWQQIXXzCG9zngncC90gdxQY2r4AAAAASUVORK5CYII=';
+const ICON_GREEN_PNG_B64  = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wqAMAjth3rus/vEYg+BDD07U4sFDoKl5za3bav19wns53F9doZmxn7poVhjiUsJIQW9e3cQr6HGmw6hiURrUyGiZhqfDqCRs2rDEFlGSAeGQMSsXgVYdwJZd8zomFNgyFGMad4aUXGGXwHWnsDb7wCeXjaZxzSLkfrD/aw4gx+a9gBGlMX02vQ/a4BwtBkCIgOrh/RcPctIq7sMPKRm7uEV55nADXqDR2+GbZoRAAAAAElFTkSuQmCC';
+const ICON_RED_ICO_B64    = 'AAABAAEAAAAAAAEAIACfAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGZJREFUeNrt17sNACEMBFHXRP+lXC9z0jVwIPzZYINJ4UkE2PGsFZNlHEIngINSAVx0BSCxYwAFbQMo7BdAQ7oAGtMDMJABBsTk5V9+AgOkAP6MPJDIzIQSU7HEXiCxGcnshmXb8Qs7+cKl4DrqegAAAABJRU5ErkJggg==';
+const ICON_YELLOW_ICO_B64 = 'AAABAAEAAAAAAAEAIACgAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGdJREFUeNrt17sNwCAQBNGrybW7JrcxltwARtxngw0mhScRcBfPfcVkGYfQCWCjVAAHHQFIbBtAQb8BFLYE0JAugMb0AAxkgAExefmXn8AAKYA/Iw8kMjOhxFQssRdIbEYyu2HZdvwChKTywyP8+N8AAAAASUVORK5CYII=';
+const ICON_GREEN_ICO_B64  = 'AAABAAEAAAAAAAEAIACgAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGdJREFUeNrt17sNwCAQBNGryZW4Yrc2ltwARtxngw0mhScRcBfXc8dkGYfQCWCjVAAHHQFIbBtAQb8BFLYE0JAugMb0AAxkgAExefmXn8AAKYA/Iw8kMjOhxFQssRdIbEYyu2HZdvwCG8zCpfXKOLgAAAAASUVORK5CYII=';
+
 // Erstelle Watcher-Script
 function createWatcherScript() {
     const watcherContent = `// LOTRO Watcher - Startet Client nur wenn LOTRO läuft
@@ -43,10 +52,10 @@ const WP_API           = 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1';
 const CUSTOM_ICON_RED    = '';
 const CUSTOM_ICON_YELLOW = '';
 const CUSTOM_ICON_GREEN  = '';
-// Eingebettete Minimal-Icons: 32x32 PNG, einfarbige Kreise auf transparentem Hintergrund.
-const ICON_RED_B64    = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wnAIAzsQu6/Rxdq8aMQJDkvjxYLCgWb3Mvocez19wmcrV2fnaGbsV95KNZY4kpCSMHoPhwkaqjx3CE0kWzNFSJrpvHpABq5qjYNUWWEdGAIRKzq7QDrTqDqjhkdcwoMOYsxzXsjK87wd4C1J/D2O4Cnl03mMXkxUn+694oz+KnpCGBEWcyoTf+zBghHmyEgMrB6SC/Us4y0esggQurmEd7mPBO4ASzbexgj/DOTAAAAAElFTkSuQmCC';
-const ICON_YELLOW_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArUlEQVR4Ae1S2wnAIAx0/1E6Thdq8aMQJDkvjxYLCgWb3Mtoa3v9fQLn0a7PztDN2K88FGsscSUhpGB0Hw4SNdR47hCaSLbmCpE10/h0AI1cVZuGqDJCOjAEIlb1doB1J1B1x4yOOQWGnMWY5r2RFWf4O8DaE3j7HcDTyybzmLwYqT/de8UZ/NR0BDCiLGbUpv9ZA4SjzRAQGVg9pBfqWUZaPWQQIXXzCG9zngncC90gdxQY2r4AAAAASUVORK5CYII=';
-const ICON_GREEN_B64  = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wqAMAjth3rus/vEYg+BDD07U4sFDoKl5za3bav19wns53F9doZmxn7poVhjiUsJIQW9e3cQr6HGmw6hiURrUyGiZhqfDqCRs2rDEFlGSAeGQMSsXgVYdwJZd8zomFNgyFGMad4aUXGGXwHWnsDb7wCeXjaZxzSLkfrD/aw4gx+a9gBGlMX02vQ/a4BwtBkCIgOrh/RcPctIq7sMPKRm7uEV55nADXqDR2+GbZoRAAAAAElFTkSuQmCC';
+// Eingebettete Minimal-Icons: ICO fuer Windows (node-systray-v2 benoetigt ICO), PNG fuer Linux/Mac.
+const ICON_RED_B64    = '${process.platform === 'win32' ? ICON_RED_ICO_B64 : ICON_RED_PNG_B64}';
+const ICON_YELLOW_B64 = '${process.platform === 'win32' ? ICON_YELLOW_ICO_B64 : ICON_YELLOW_PNG_B64}';
+const ICON_GREEN_B64  = '${process.platform === 'win32' ? ICON_GREEN_ICO_B64 : ICON_GREEN_PNG_B64}';
 var SysTrayPkg = null;
 try { SysTrayPkg = require('node-systray-v2'); } catch (_) {}
 var SysTray = SysTrayPkg ? (SysTrayPkg.default || SysTrayPkg.SysTray || SysTrayPkg) : null;
@@ -808,7 +817,6 @@ function isPluginActive() {
         if (!fs.existsSync(lotroPath)) return false;
         var pluginDataDir = path.join(lotroPath, 'PluginData');
         if (!fs.existsSync(pluginDataDir)) return false;
-        var cutoff = Date.now() - 5 * 60 * 1000;
         var servers = fs.readdirSync(pluginDataDir);
         for (var si = 0; si < servers.length; si++) {
             var serverDir = path.join(pluginDataDir, servers[si]);
@@ -817,7 +825,7 @@ function isPluginActive() {
                 for (var ci = 0; ci < chars.length; ci++) {
                     var syncFile = path.join(serverDir, chars[ci], 'DeathTracker_Sync.plugindata');
                     try {
-                        if (fs.existsSync(syncFile) && fs.statSync(syncFile).mtimeMs > cutoff) return true;
+                        if (fs.existsSync(syncFile)) return true;
                     } catch (_) {}
                 }
             } catch (_) {}
