@@ -219,7 +219,23 @@ setTimeout(function() {
             }
         }
 
-        // Schritt 2: Watcher + Autostart neu generieren und starten
+        // Schritt 2: version.json VOR dem Watcher-Start schreiben.
+        // Kritisch: der neue Watcher liest version.json beim Start in checkAndApplyUpdate().
+        // Steht dort noch die alte Version, erkennt er dasselbe Update erneut und beendet
+        // sich sofort wieder → Watcher laeuft nie. version.json muss aktuell sein bevor
+        // install-autostart.js den Watcher spawnt.
+        try {
+            fs.writeFileSync(
+                path.join(dir, 'version.json'),
+                JSON.stringify({ version: newVersion }, null, 2)
+            );
+            log('version.json aktualisiert auf v' + newVersion);
+        } catch (e) {
+            log('version.json Fehler: ' + e.message);
+            errors.push('version.json konnte nicht geschrieben werden: ' + e.message.trim().split('\n')[0]);
+        }
+
+        // Schritt 3: Watcher + Autostart neu generieren und starten
         log('Konfiguriere Autostart neu...');
         try {
             const iaOpts = { cwd: dir };
@@ -234,18 +250,6 @@ setTimeout(function() {
         } catch (e) {
             log('install-autostart Fehler: ' + e.message);
             errors.push('Autostart-Konfiguration fehlgeschlagen: ' + e.message.trim().split('\n')[0]);
-        }
-
-        // Schritt 3: version.json auf neue Version setzen
-        try {
-            fs.writeFileSync(
-                path.join(dir, 'version.json'),
-                JSON.stringify({ version: newVersion }, null, 2)
-            );
-            log('version.json aktualisiert auf v' + newVersion);
-        } catch (e) {
-            log('version.json Fehler: ' + e.message);
-            errors.push('version.json konnte nicht geschrieben werden: ' + e.message.trim().split('\n')[0]);
         }
 
         // Schritt 4: LOTRO Plugin-Dateien aktualisieren
