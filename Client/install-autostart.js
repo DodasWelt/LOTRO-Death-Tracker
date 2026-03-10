@@ -843,9 +843,9 @@ function getIconData(color) {
 }
 
 function getTrayTooltip(clientRunning, pluginActive) {
-    return 'LOTRO Death Tracker\n' +
-        'Watcher:  laeuft\n' +
-        'Client:   ' + (clientRunning ? 'laeuft' : 'nicht gestartet') + '\n' +
+    return 'LOTRO Death Tracker\\n' +
+        'Watcher:  laeuft\\n' +
+        'Client:   ' + (clientRunning ? 'laeuft' : 'nicht gestartet') + '\\n' +
         'Plugin:   ' + (pluginActive  ? 'erkannt' : 'nicht erkannt');
 }
 
