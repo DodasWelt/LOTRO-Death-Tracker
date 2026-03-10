@@ -1042,7 +1042,15 @@ function installLinux() {
         console.log('');
 
         const pidFilePath = path.join(__dirname, 'watcher.pid');
-        if (fs.existsSync(pidFilePath)) { try { fs.unlinkSync(pidFilePath); } catch (e) {} }
+        if (fs.existsSync(pidFilePath)) {
+            try {
+                const oldPid = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+                if (oldPid && oldPid !== process.pid) {
+                    try { process.kill(oldPid, 'SIGTERM'); } catch (_) {}
+                }
+                fs.unlinkSync(pidFilePath);
+            } catch (e) {}
+        }
 
         const { spawn } = require('child_process');
         const watcher = spawn(process.execPath, [WATCHER_JS], { detached: true, stdio: 'ignore' });
@@ -1115,11 +1123,18 @@ function install() {
         console.log('🚀 Starte Watcher JETZT im Hintergrund...');
         console.log('');
 
-        // Stale PID-Lock entfernen – verhindert sofortigen Exit des neuen Watchers
-        // bei Mehrfachaufruf ohne vorheriges taskkill (P2-E)
+        // Laufenden Watcher beenden bevor ein neuer gestartet wird (verhindert doppelte Icons)
         const pidFilePath = path.join(__dirname, 'watcher.pid');
         if (fs.existsSync(pidFilePath)) {
-            try { fs.unlinkSync(pidFilePath); } catch (e) {}
+            try {
+                const oldPid = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
+                if (oldPid && oldPid !== process.pid) {
+                    // taskkill /F ist auf Windows zuverlaessiger als SIGTERM
+                    const { spawnSync: _spawnSync } = require('child_process');
+                    _spawnSync('taskkill', ['/F', '/PID', String(oldPid)], { windowsHide: true, stdio: 'ignore' });
+                }
+                fs.unlinkSync(pidFilePath);
+            } catch (e) {}
         }
 
         // Starte Watcher sofort im Hintergrund
