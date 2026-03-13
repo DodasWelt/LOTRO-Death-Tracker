@@ -1,6 +1,6 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung
 
-**Version 2.6** | Stand: März 2026
+**Version 2.7** | Stand: März 2026
 
 ---
 
@@ -20,7 +20,7 @@ Du stirbst im Spiel → Plugin erkennt es → Client sendet Daten → Overlay ze
 
 Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt passiert beim Doppelklick auf die BAT-Datei gar nichts.
 
-1. **Rechtsklick** auf `LOTRO-Death-Tracker-v2.6.zip` → **Eigenschaften**
+1. **Rechtsklick** auf `LOTRO-Death-Tracker-v2.7.zip` → **Eigenschaften**
 2. Haken bei **„Zulassen"** setzen → **Übernehmen** → **OK**
 3. ZIP danach entpacken
 
@@ -29,7 +29,7 @@ Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt pass
 1. **Rechtsklick** auf `INSTALL.bat` → **Eigenschaften** → Haken bei **„Zulassen"** → **OK**
 2. **Rechtsklick** auf `INSTALL.bat` → **Als Administrator ausführen**
 
-Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v2.6 erfolgreich installiert!"**
+Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v2.7 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Der Installer erkennt das und öffnet die Download-Seite automatisch. Nach der Node.js-Installation den PC neu starten und `INSTALL.bat` erneut ausführen.
 
@@ -58,8 +58,8 @@ Der Client läuft ab sofort unsichtbar im Hintergrund und startet automatisch mi
 ### Schritt 1: ZIP entpacken
 
 ```bash
-unzip LOTRO-Death-Tracker-v2.6.zip
-cd LOTRO-Death-Tracker-v2.6
+unzip LOTRO-Death-Tracker-v2.7.zip
+cd LOTRO-Death-Tracker-v2.7
 ```
 
 ### Schritt 2: INSTALL.sh ausführen
@@ -74,7 +74,7 @@ Der Installer findet deinen LOTRO-Pfad automatisch (Steam native, Steam Flatpak,
 LOTRO_PATH="/pfad/zu/LOTRO" bash INSTALL.sh
 ```
 
-Am Ende erscheint die Meldung: **„LOTRO Death Tracker v2.6 erfolgreich installiert!"**
+Am Ende erscheint die Meldung: **„LOTRO Death Tracker v2.7 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Den Paketmanager der Distribution verwenden, z.B. `sudo apt install nodejs npm` (Ubuntu/Debian) oder `sudo pacman -S nodejs npm` (Arch).
 
@@ -132,12 +132,14 @@ Melde dich via Discord bei Doda.
 
 Eine Logdatei (`install.log`) wird im selben Ordner wie die BAT-Datei erstellt. Existiert sie nicht, ist die BAT-Datei noch blockiert (Schritt 1 und 2 wiederholen). Existiert sie, enthält sie den genauen Fehlergrund.
 
-### Kein Tray-Icon in der Taskleiste (Windows)
+### Status-Seite in OBS einrichten (optional)
 
-Falls nach der Installation kein farbiges Kreis-Icon im Infobereich der Taskleiste erscheint, hat der Antivirus das zugehörige Programm (`tray.exe`) blockiert oder in Quarantäne verschoben. Das beeinträchtigt das Death-Tracking **nicht** — es handelt sich nur um das Statusanzeige-Feature.
+Nach der Installation läuft ein lokaler Status-Server, der den aktuellen Zustand aller Tracker-Komponenten anzeigt.
 
-So beheben: Im Antivirus-Programm eine Ausnahme für `C:\LOTRO-Death-Tracker\node_modules\node-systray-v2\` hinzufügen, dann `npm run install-service` in einer Eingabeaufforderung ausführen:
-```
-cd C:\LOTRO-Death-Tracker
-npm run install-service
-```
+**OBS Browser-Dock einrichten:**
+1. OBS öffnen → Menü **Docks** → **Benutzerdefinierte Browser-Docks**
+2. Name: `LOTRO Status`, URL: `http://localhost:7890` → **OK**
+3. Das Dock zeigt: Watcher ✓/✗, Client ✓/✗, Plugin ✓/✗
+
+Der Status-Server startet automatisch mit dem Watcher und ist auch dann erreichbar, wenn der Watcher nicht läuft — der **„Watcher neu starten"**-Button funktioniert daher immer.
+

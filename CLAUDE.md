@@ -9,7 +9,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
-> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen. `RISIKOANALYSE-v2.6.md` — v2.6-Analyse + Sys-Tray-Risiken + syncLocalDeaths-Korrekturen.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen. `RISIKOANALYSE-v2.6.md` — v2.6-Analyse + Sys-Tray-Risiken + syncLocalDeaths-Korrekturen. `RISIKOANALYSE-v2.7.md` — v2.7-Analyse + OBS-Dock Status-Server-Risiken.
 
 ### Repository-Struktur
 
@@ -106,33 +106,37 @@ LOTRO (Spiel)
 
 ### Autostart-System
 
-`install-autostart.js` generiert zwei Dateien dynamisch (NICHT versioniert, zur Laufzeit erstellt):
-- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung. Zeigt **Sys-Tray-Icon** (ab v2.6).
+`install-autostart.js` generiert drei Dateien dynamisch (NICHT versioniert, zur Laufzeit erstellt):
+- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung.
+- `lotro-status-server.js` — Lokaler HTTP-Server auf Port 7890. Läuft **als eigener Prozess** unabhängig vom Watcher. Zeigt Status-Seite für OBS Browser-Dock.
 - `start-lotro-watcher.vbs` — Startet den Watcher unsichtbar (kein Konsolenfenster)
 
 Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
 
-### Sys-Tray Status-Icon (ab v2.6)
+### OBS Browser-Dock Status-Seite (ab v2.7)
 
-Der Watcher zeigt ein farbiges Tray-Icon das den Status aller Tracker-Komponenten signalisiert:
+`lotro-status-server.js` startet als **separater Prozess** auf Port 7890 und ist unabhängig vom Watcher erreichbar.
 
-| Icon | Bedeutung |
-|---|---|
-| Kein Icon | LOTRO läuft nicht (Watcher wartet) |
-| Rot | LOTRO läuft, aber Client ODER Plugin nicht aktiv |
-| Gelb | LOTRO + Client aktiv, aber Plugin noch nicht detektiert (oder umgekehrt) |
-| Grün | LOTRO + Client + Plugin alle aktiv |
+**Architektur:**
+- Läuft als eigener `node`-Prozess mit eigenem `status-server.pid` Singleton-Lock
+- Liest `watcher.pid` und `client.pid` via `process.kill(pid, 0)` — kein IPC nötig
+- `client.js` schreibt beim Start `client.pid`, löscht sie beim Beenden
 
-**Plugin "aktiv":** `DeathTracker_Sync.plugindata` existiert mit mtime < 5 Minuten.
+**Endpoints:**
+- `GET /` — HTML-Statusseite (Watcher/Client/Plugin-Dots, Restart-Button)
+- `GET /status` — JSON `{ watcher, client, plugin, lastCheck }`
+- `POST /restart` — schreibt temp VBScript/Shell-Script, spawnt es detached, beendet sich dann selbst
 
-**Implementierung:**
-- Abhängigkeit: `node-systray-v2` — verwendet vorkompilierte Go-Binaries (`tray_windows.exe`, `tray_linux`), **kein node-gyp / C++ Build Tools** erforderlich.
-- Fork: `github:DodasWelt/node-systray-v2#de21859b14596e8ca1c7437f783a92befc38ab46` (pinned SHA)
-- Icons: 32×32 PNG, einfarbige Kreise, als Base64 eingebettet in `ICON_RED_B64`, `ICON_YELLOW_B64`, `ICON_GREEN_B64`.
-- Custom-Icon-Pfade: `CUSTOM_ICON_RED/YELLOW/GREEN` — absoluter Pfad zu eigener 32×32 PNG-Datei oder leer für Defaults.
-- Linux-Fallback: Wenn `node-systray-v2` nicht verfügbar (`TRAY_AVAILABLE = false`), wird bei Statuswechsel ein `notify-send`-Toast gesendet.
-- Funktionen im Watcher-Template: `isPluginActive()`, `getTrayState()`, `getIconData()`, `getTrayTooltip()`, `destroyTray()`, `updateTray()`.
-- `destroyTray()` wird in SIGINT, SIGTERM und `process.on('exit')` aufgerufen.
+**Restart-Flow:**
+1. POST /restart → antwortet 200 OK
+2. Temp-Script wird geschrieben (`_lotro_restart.vbs` / `_lotro_restart.sh`)
+3. Temp-Script spawnen (detached), Status-Server beendet sich nach 200ms
+4. Temp-Script wartet 2s, killt alle `node.exe`, bereinigt StreamDeck-Node-Ordner, startet `install-autostart.js install`
+5. `install-autostart.js install` startet neuen Watcher + neuen Status-Server
+
+**OBS Dock einrichten:** OBS → Docks → Benutzerdefinierte Browser-Docks → URL: `http://localhost:7890`
+
+**Plugin-Erkennung:** `isPluginActive()` prüft ob `Plugins/DodasWelt/DeathTracker.plugin` existiert (gecacht, kein Registry-Query alle 5s).
 
 ### Linux-Kompatibilität (ab v2.4+)
 
@@ -533,7 +537,7 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand und letzter GitHub-Release sind **v2.6** (released 2026-03-10).
+> **Aktueller Stand:** Code-Stand ist **v2.7** (in Entwicklung). Letzter GitHub-Release: **v2.6** (released 2026-03-10).
 
 ## WordPress Plugin Auto-Update
 
@@ -546,9 +550,9 @@ Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
 
 Einbindung auf `herrin-inge.de` via jsDelivr:
 ```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.6/Website/lotro-data-fetcher.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.7/Website/lotro-data-fetcher.js"></script>
 ```
-Bei neuem Release: `@v2.6` → `@v2.7` (usw.) im Script-Tag aktualisieren.
+Bei neuem Release: `@v2.7` → `@v2.8` (usw.) im Script-Tag aktualisieren.
 
 ---
 

@@ -195,13 +195,11 @@ setTimeout(function() {
         } catch (e) {
             log('npm install Fehler: ' + e.message);
             // Pruefen ob essentielle Pakete trotzdem vorhanden sind.
-            // Wenn ja, scheiterte wahrscheinlich nur das optionale node-systray-v2 (z.B. Netzwerk,
-            // Antivirus) – kein Einfluss auf Kernfunktionen. Kein Fehler-Dialog in diesem Fall.
             var essentialOk = ['chokidar', 'axios'].every(function(m) {
                 return fs.existsSync(path.join(dir, 'node_modules', m));
             });
             if (essentialOk) {
-                log('Essentielle Pakete vorhanden – Watcher laeuft ohne Sys-Tray-Icon (node-systray-v2 nicht installiert).');
+                log('Essentielle Pakete vorhanden – npm-Fehler war nicht kritisch.');
             } else {
                 errors.push('npm install fehlgeschlagen: ' + e.message.trim().split('\n')[0]);
             }

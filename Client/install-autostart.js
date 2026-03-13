@@ -19,14 +19,305 @@ const SHORTCUT_PATH = IS_LINUX
     ? path.join(os.homedir(), '.config', 'autostart', 'lotro-death-tracker.desktop')
     : path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 
-// Icon-Daten fuer Sys-Tray: werden beim Generieren des Watcher-Scripts eingebettet.
-// Windows benoetigt ICO-Format; Linux/Mac verwenden PNG.
-const ICON_RED_PNG_B64    = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wnAIAzsQu6/Rxdq8aMQJDkvjxYLCgWb3Mvocez19wmcrV2fnaGbsV95KNZY4kpCSMHoPhwkaqjx3CE0kWzNFSJrpvHpABq5qjYNUWWEdGAIRKzq7QDrTqDqjhkdcwoMOYsxzXsjK87wd4C1J/D2O4Cnl03mMXkxUn+694oz+KnpCGBEWcyoTf+zBghHmyEgMrB6SC/Us4y0esggQurmEd7mPBO4ASzbexgj/DOTAAAAAElFTkSuQmCC';
-const ICON_YELLOW_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArUlEQVR4Ae1S2wnAIAx0/1E6Thdq8aMQJDkvjxYLCgWb3Mtoa3v9fQLn0a7PztDN2K88FGsscSUhpGB0Hw4SNdR47hCaSLbmCpE10/h0AI1cVZuGqDJCOjAEIlb1doB1J1B1x4yOOQWGnMWY5r2RFWf4O8DaE3j7HcDTyybzmLwYqT/de8UZ/NR0BDCiLGbUpv9ZA4SjzRAQGVg9pBfqWUZaPWQQIXXzCG9zngncC90gdxQY2r4AAAAASUVORK5CYII=';
-const ICON_GREEN_PNG_B64  = 'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAArklEQVR4Ae1S2wqAMAjth3rus/vEYg+BDD07U4sFDoKl5za3bav19wns53F9doZmxn7poVhjiUsJIQW9e3cQr6HGmw6hiURrUyGiZhqfDqCRs2rDEFlGSAeGQMSsXgVYdwJZd8zomFNgyFGMad4aUXGGXwHWnsDb7wCeXjaZxzSLkfrD/aw4gx+a9gBGlMX02vQ/a4BwtBkCIgOrh/RcPctIq7sMPKRm7uEV55nADXqDR2+GbZoRAAAAAElFTkSuQmCC';
-const ICON_RED_ICO_B64    = 'AAABAAEAAAAAAAEAIACfAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGZJREFUeNrt17sNACEMBFHXRP+lXC9z0jVwIPzZYINJ4UkE2PGsFZNlHEIngINSAVx0BSCxYwAFbQMo7BdAQ7oAGtMDMJABBsTk5V9+AgOkAP6MPJDIzIQSU7HEXiCxGcnshmXb8Qs7+cKl4DrqegAAAABJRU5ErkJggg==';
-const ICON_YELLOW_ICO_B64 = 'AAABAAEAAAAAAAEAIACgAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGdJREFUeNrt17sNwCAQBNGrybW7JrcxltwARtxngw0mhScRcBfPfcVkGYfQCWCjVAAHHQFIbBtAQb8BFLYE0JAugMb0AAxkgAExefmXn8AAKYA/Iw8kMjOhxFQssRdIbEYyu2HZdvwChKTywyP8+N8AAAAASUVORK5CYII=';
-const ICON_GREEN_ICO_B64  = 'AAABAAEAAAAAAAEAIACgAAAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAGdJREFUeNrt17sNwCAQBNGryZW4Yrc2ltwARtxngw0mhScRcBfXc8dkGYfQCWCjVAAHHQFIbBtAQb8BFLYE0JAugMb0AAxkgAExefmXn8AAKYA/Iw8kMjOhxFQssRdIbEYyu2HZdvwCG8zCpfXKOLgAAAAASUVORK5CYII=';
+const STATUS_SERVER_JS = path.join(__dirname, 'lotro-status-server.js');
+
+// Erstelle Status-Server-Script
+function createStatusServerScript() {
+    const CLIENT_PATH_ESC = CLIENT_PATH.replace(/\\/g, '\\\\');
+    const DIR_ESC = __dirname.replace(/\\/g, '\\\\');
+
+    const content = '// LOTRO Death Tracker - Status-Server v2.7\n' +
+'// Separater Prozess: laeuft unabhaengig vom Watcher.\n' +
+'// OBS Browser-Dock: http://localhost:7890\n' +
+'const http = require(\'http\');\n' +
+'const fs = require(\'fs\');\n' +
+'const path = require(\'path\');\n' +
+'const os = require(\'os\');\n' +
+'const { spawn, spawnSync } = require(\'child_process\');\n' +
+'\n' +
+'var PORTS     = [7890,7891,7892,7893,7894];\n' +
+'var portIndex = 0;\n' +
+'var PORT      = PORTS[portIndex];\n' +
+'const DIR         = \'' + DIR_ESC + '\';\n' +
+'const PID_FILE    = path.join(DIR, \'status-server.pid\');\n' +
+'const WATCHER_PID = path.join(DIR, \'watcher.pid\');\n' +
+'const CLIENT_PID  = path.join(DIR, \'client.pid\');\n' +
+'const WATCHER_JS  = path.join(DIR, \'lotro-watcher.js\');\n' +
+'const AUTOSTART_JS = path.join(DIR, \'install-autostart.js\');\n' +
+'const LOG_PATH    = path.join(DIR, \'status-server.log\');\n' +
+'\n' +
+'var cachedLotroPath = null;\n' +
+'\n' +
+'function log(msg) {\n' +
+'    var ts = new Date().toISOString();\n' +
+'    try { fs.appendFileSync(LOG_PATH, \'[\' + ts + \'] \' + msg + \'\\n\', \'utf8\'); } catch (e) {}\n' +
+'}\n' +
+'\n' +
+'function acquireLock() {\n' +
+'    if (fs.existsSync(PID_FILE)) {\n' +
+'        try {\n' +
+'            var existingPid = parseInt(fs.readFileSync(PID_FILE, \'utf8\').trim(), 10);\n' +
+'            if (existingPid && existingPid !== process.pid) {\n' +
+'                try {\n' +
+'                    process.kill(existingPid, 0);\n' +
+'                    var isNode = false;\n' +
+'                    try {\n' +
+'                        if (process.platform === \'linux\') {\n' +
+'                            var tc = spawnSync(\'ps\', [\'-p\', String(existingPid), \'-o\', \'comm=\'], { encoding: \'utf8\' });\n' +
+'                            if (tc.stdout && tc.stdout.toLowerCase().indexOf(\'node\') !== -1) isNode = true;\n' +
+'                        } else {\n' +
+'                            var tc = spawnSync(\'tasklist\', [\'/FI\', \'PID eq \' + existingPid, \'/FO\', \'CSV\', \'/NH\'], { windowsHide: true, encoding: \'utf8\' });\n' +
+'                            if (tc.stdout && tc.stdout.toLowerCase().indexOf(\'node.exe\') !== -1) isNode = true;\n' +
+'                        }\n' +
+'                    } catch (_) {}\n' +
+'                    if (isNode) { log(\'Status-Server bereits aktiv (PID \' + existingPid + \') – beende diese Instanz.\'); process.exit(0); }\n' +
+'                } catch (e) { log(\'Stale PID-Lock – wird ueberschrieben.\'); }\n' +
+'            }\n' +
+'        } catch (e) {}\n' +
+'    }\n' +
+'    try { fs.writeFileSync(PID_FILE, String(process.pid), \'utf8\'); } catch (e) {}\n' +
+'}\n' +
+'\n' +
+'function releaseLock() {\n' +
+'    try {\n' +
+'        if (fs.existsSync(PID_FILE)) {\n' +
+'            var pid = parseInt(fs.readFileSync(PID_FILE, \'utf8\').trim(), 10);\n' +
+'            if (pid === process.pid) fs.unlinkSync(PID_FILE);\n' +
+'        }\n' +
+'    } catch (e) {}\n' +
+'}\n' +
+'\n' +
+'function isProcessAlive(pidFile) {\n' +
+'    try {\n' +
+'        if (!fs.existsSync(pidFile)) return false;\n' +
+'        var pid = parseInt(fs.readFileSync(pidFile, \'utf8\').trim(), 10);\n' +
+'        if (!pid) return false;\n' +
+'        process.kill(pid, 0);\n' +
+'        return true;\n' +
+'    } catch (e) { return false; }\n' +
+'}\n' +
+'\n' +
+'function getLotroPathCached() {\n' +
+'    if (cachedLotroPath) return cachedLotroPath;\n' +
+'    var lotroDir = \'The Lord of the Rings Online\';\n' +
+'    if (process.env.LOTRO_PATH) { cachedLotroPath = process.env.LOTRO_PATH; return cachedLotroPath; }\n' +
+'    if (process.platform === \'linux\') {\n' +
+'        var steamNative = path.join(os.homedir(), \'.steam\', \'steam\', \'steamapps\', \'compatdata\', \'212500\', \'pfx\', \'drive_c\', \'users\', \'steamuser\', \'My Documents\', lotroDir);\n' +
+'        if (fs.existsSync(steamNative)) { cachedLotroPath = steamNative; return cachedLotroPath; }\n' +
+'        var steamFlatpak = path.join(os.homedir(), \'.var\', \'app\', \'com.valvesoftware.Steam\', \'data\', \'Steam\', \'steamapps\', \'compatdata\', \'212500\', \'pfx\', \'drive_c\', \'users\', \'steamuser\', \'My Documents\', lotroDir);\n' +
+'        if (fs.existsSync(steamFlatpak)) { cachedLotroPath = steamFlatpak; return cachedLotroPath; }\n' +
+'        var vdfLocs = [path.join(os.homedir(), \'.steam\', \'steam\', \'config\', \'libraryfolders.vdf\'), path.join(os.homedir(), \'.var\', \'app\', \'com.valvesoftware.Steam\', \'data\', \'Steam\', \'config\', \'libraryfolders.vdf\')];\n' +
+'        for (var vi = 0; vi < vdfLocs.length; vi++) {\n' +
+'            if (!fs.existsSync(vdfLocs[vi])) continue;\n' +
+'            try {\n' +
+'                var vdfContent = fs.readFileSync(vdfLocs[vi], \'utf8\');\n' +
+'                var vdfRe = /"path"\\s+"([^"]+)"/g; var vm;\n' +
+'                while ((vm = vdfRe.exec(vdfContent)) !== null) {\n' +
+'                    var sc = path.join(vm[1].trim(), \'steamapps\', \'compatdata\', \'212500\', \'pfx\', \'drive_c\', \'users\', \'steamuser\', \'My Documents\', lotroDir);\n' +
+'                    if (fs.existsSync(sc)) { cachedLotroPath = sc; return cachedLotroPath; }\n' +
+'                }\n' +
+'            } catch (_) {}\n' +
+'        }\n' +
+'        var lutrisDir = path.join(os.homedir(), \'.config\', \'lutris\', \'games\');\n' +
+'        if (fs.existsSync(lutrisDir)) {\n' +
+'            try {\n' +
+'                var lfiles = fs.readdirSync(lutrisDir).filter(function(f) { return (f.toLowerCase().indexOf(\'lord\') !== -1 || f.toLowerCase().indexOf(\'lotro\') !== -1) && f.endsWith(\'.yml\'); });\n' +
+'                for (var li = 0; li < lfiles.length; li++) {\n' +
+'                    try {\n' +
+'                        var yml = fs.readFileSync(path.join(lutrisDir, lfiles[li]), \'utf8\');\n' +
+'                        var lm = yml.match(/(?:wine_prefix|prefix):\\s*(.+)/);\n' +
+'                        if (lm) {\n' +
+'                            var uname = process.env.USER || \'user\';\n' +
+'                            var lc = path.join(lm[1].trim(), \'drive_c\', \'users\', uname, \'My Documents\', lotroDir);\n' +
+'                            if (fs.existsSync(lc)) { cachedLotroPath = lc; return cachedLotroPath; }\n' +
+'                        }\n' +
+'                    } catch (_) {}\n' +
+'                }\n' +
+'            } catch (_) {}\n' +
+'        }\n' +
+'        var wineUname = process.env.USER || \'user\';\n' +
+'        var wineDefault = path.join(os.homedir(), \'.wine\', \'drive_c\', \'users\', wineUname, \'My Documents\', lotroDir);\n' +
+'        if (fs.existsSync(wineDefault)) { cachedLotroPath = wineDefault; return cachedLotroPath; }\n' +
+'        cachedLotroPath = path.join(os.homedir(), \'Documents\', lotroDir);\n' +
+'        return cachedLotroPath;\n' +
+'    }\n' +
+'    try {\n' +
+'        var r = spawnSync(\'reg\', [\'query\', \'HKCU\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Explorer\\\\Shell Folders\', \'/v\', \'Personal\'], { windowsHide: true, encoding: \'utf8\' });\n' +
+'        var m = (r.stdout || \'\').match(/Personal\\s+REG_SZ\\s+(.+)/);\n' +
+'        if (m) { var p = path.join(m[1].trim(), lotroDir); if (fs.existsSync(p)) { cachedLotroPath = p; return cachedLotroPath; } }\n' +
+'    } catch (_) {}\n' +
+'    cachedLotroPath = path.join(os.homedir(), \'Documents\', lotroDir);\n' +
+'    return cachedLotroPath;\n' +
+'}\n' +
+'\n' +
+'function isPluginActive() {\n' +
+'    try {\n' +
+'        var lotroPath = getLotroPathCached();\n' +
+'        var pluginFile = path.join(lotroPath, \'Plugins\', \'DodasWelt\', \'DeathTracker.plugin\');\n' +
+'        return fs.existsSync(pluginFile);\n' +
+'    } catch (_) { return false; }\n' +
+'}\n' +
+'\n' +
+'function getStatus() {\n' +
+'    return {\n' +
+'        watcher: isProcessAlive(WATCHER_PID),\n' +
+'        client:  isProcessAlive(CLIENT_PID),\n' +
+'        plugin:  isPluginActive(),\n' +
+'        lastCheck: new Date().toISOString()\n' +
+'    };\n' +
+'}\n' +
+'\n' +
+'function doRestart(res) {\n' +
+'    res.writeHead(200, { \'Content-Type\': \'application/json\' });\n' +
+'    res.end(\'{"ok":true}\');\n' +
+'    log(\'Restart angefordert – schreibe Restart-Script...\');\n' +
+'\n' +
+'    var nodeExe = process.execPath.replace(/\\\\/g, \'\\\\\\\\\');\n' +
+'    var autostartPath = AUTOSTART_JS.replace(/\\\\/g, \'\\\\\\\\\');\n' +
+'\n' +
+'    if (process.platform === \'linux\') {\n' +
+'        var shPath = path.join(DIR, \'_lotro_restart.sh\');\n' +
+'        var shContent =\n' +
+'            \'#!/bin/bash\\n\' +\n' +
+'            \'sleep 2\\n\' +\n' +
+'            \'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"\\n\' +\n' +
+'            \'if [ -f "$SCRIPT_DIR/watcher.pid" ]; then\\n\' +\n' +
+'            \'  wPid=$(cat "$SCRIPT_DIR/watcher.pid" 2>/dev/null)\\n\' +\n' +
+'            \'  [ -n "$wPid" ] && kill -TERM "$wPid" 2>/dev/null\\n\' +\n' +
+'            \'fi\\n\' +\n' +
+'            \'if [ -f "$SCRIPT_DIR/client.pid" ]; then\\n\' +\n' +
+'            \'  cPid=$(cat "$SCRIPT_DIR/client.pid" 2>/dev/null)\\n\' +\n' +
+'            \'  [ -n "$cPid" ] && kill -TERM "$cPid" 2>/dev/null\\n\' +\n' +
+'            \'fi\\n\' +\n' +
+'            \'"\' + process.execPath + \'" "\' + AUTOSTART_JS + \'" install\\n\' +\n' +
+'            \'rm -f "$0"\\n\';\n' +
+'        try { fs.writeFileSync(shPath, shContent, \'utf8\'); } catch (e) { log(\'Restart-Script schreiben fehlgeschlagen: \' + e.message); return; }\n' +
+'        try { fs.chmodSync(shPath, 0o755); } catch (_) {}\n' +
+'        var child = spawn(\'sh\', [shPath], { detached: true, stdio: \'ignore\' });\n' +
+'        child.unref();\n' +
+'    } else {\n' +
+'        var vbsPath = path.join(DIR, \'_lotro_restart.vbs\');\n' +
+'        var vbsContent =\n' +
+'            \'Set fso = CreateObject("Scripting.FileSystemObject")\\r\\n\' +\n' +
+'            \'Set oShell = CreateObject("WScript.Shell")\\r\\n\' +\n' +
+'            \'WScript.Sleep 2000\\r\\n\' +\n' +
+'            \'Dim scriptDir : scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)\\r\\n\' +\n' +
+'            \'Dim wPid, cPid, subPath, wStream, cStream, pluginFolder, subName, sdBase, wmiSvc, wmiProcs, wmiProc\\r\\n\' +\n' +
+'            \'Dim watcherPidFile : watcherPidFile = scriptDir & "\\\\watcher.pid"\\r\\n\' +\n' +
+'            \'If fso.FileExists(watcherPidFile) Then\\r\\n\' +\n' +
+'            \'  On Error Resume Next\\r\\n\' +\n' +
+'            \'  Set wStream = fso.OpenTextFile(watcherPidFile, 1)\\r\\n\' +\n' +
+'            \'  wPid = Trim(wStream.ReadAll) : wStream.Close\\r\\n\' +\n' +
+'            \'  If wPid <> "" Then oShell.Run "taskkill /F /PID " & wPid, 0, True\\r\\n\' +\n' +
+'            \'  On Error GoTo 0\\r\\n\' +\n' +
+'            \'End If\\r\\n\' +\n' +
+'            \'Dim clientPidFile : clientPidFile = scriptDir & "\\\\client.pid"\\r\\n\' +\n' +
+'            \'If fso.FileExists(clientPidFile) Then\\r\\n\' +\n' +
+'            \'  On Error Resume Next\\r\\n\' +\n' +
+'            \'  Set cStream = fso.OpenTextFile(clientPidFile, 1)\\r\\n\' +\n' +
+'            \'  cPid = Trim(cStream.ReadAll) : cStream.Close\\r\\n\' +\n' +
+'            \'  If cPid <> "" Then oShell.Run "taskkill /F /PID " & cPid, 0, True\\r\\n\' +\n' +
+'            \'  On Error GoTo 0\\r\\n\' +\n' +
+'            \'End If\\r\\n\' +\n' +
+'            \'sdBase = oShell.ExpandEnvironmentStrings("%APPDATA%\\\\Elgato\\\\StreamDeck\\\\Plugins")\\r\\n\' +\n' +
+'            \'If fso.FolderExists(sdBase) Then\\r\\n\' +\n' +
+'            \'  On Error Resume Next\\r\\n\' +\n' +
+'            \'  Set wmiSvc = GetObject("winmgmts:root\\\\cimv2")\\r\\n\' +\n' +
+'            \'  Set wmiProcs = wmiSvc.ExecQuery("SELECT * FROM Win32_Process WHERE Name=" & Chr(34) & "node.exe" & Chr(34))\\r\\n\' +\n' +
+'            \'  For Each wmiProc In wmiProcs\\r\\n\' +\n' +
+'            \'    If InStr(1, LCase(wmiProc.ExecutablePath), LCase(sdBase), 1) > 0 Then wmiProc.Terminate(0)\\r\\n\' +\n' +
+'            \'  Next\\r\\n\' +\n' +
+'            \'  WScript.Sleep 500\\r\\n\' +\n' +
+'            \'  For Each pluginFolder In fso.GetFolder(sdBase).SubFolders\\r\\n\' +\n' +
+'            \'    For Each subName In Array("node", "nodejs")\\r\\n\' +\n' +
+'            \'      subPath = pluginFolder.Path & "\\\\" & subName\\r\\n\' +\n' +
+'            \'      If fso.FolderExists(subPath) Then fso.DeleteFolder subPath, True\\r\\n\' +\n' +
+'            \'    Next\\r\\n\' +\n' +
+'            \'  Next\\r\\n\' +\n' +
+'            \'  On Error GoTo 0\\r\\n\' +\n' +
+'            \'End If\\r\\n\' +\n' +
+'            \'oShell.Run Chr(34) & "\' + nodeExe + \'" & Chr(34) & " " & Chr(34) & "\' + autostartPath + \'" & Chr(34) & " install", 0, False\\r\\n\' +\n' +
+'            \'On Error Resume Next\\r\\n\' +\n' +
+'            \'fso.DeleteFile WScript.ScriptFullName\\r\\n\' +\n' +
+'            \'On Error GoTo 0\\r\\n\';\n' +
+'        try { fs.writeFileSync(vbsPath, vbsContent, \'latin1\'); } catch (e) { log(\'Restart-VBS schreiben fehlgeschlagen: \' + e.message); return; }\n' +
+'        var child = spawn(\'wscript.exe\', [\'//nologo\', vbsPath], { detached: true, stdio: \'ignore\', windowsHide: true });\n' +
+'        child.unref();\n' +
+'    }\n' +
+'\n' +
+'    setTimeout(function() { log(\'Status-Server beendet sich fuer Restart.\'); process.exit(0); }, 200);\n' +
+'}\n' +
+'\n' +
+'var HTML_PAGE = \'<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LOTRO Death Tracker Status</title>\' +\n' +
+'\'<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#1a1a2e;color:#e0e0e0;font-family:sans-serif;padding:16px;min-height:100vh}\' +\n' +
+'\'h1{color:#c89b3c;font-size:1.1em;margin-bottom:14px;letter-spacing:.05em}h1 span{font-size:.75em;color:#888;font-weight:normal;margin-left:8px}\' +\n' +
+'\'.status-grid{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}\' +\n' +
+'\'.status-item{display:flex;align-items:center;gap:10px;background:#16213e;border-radius:6px;padding:9px 12px}\' +\n' +
+'\'.dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;transition:background .4s}\' +\n' +
+'\'.dot.green{background:#4caf50}.dot.red{background:#f44336}.dot.grey{background:#555}\' +\n' +
+'\'.label{font-size:.9em;flex:1}.sublabel{font-size:.75em;color:#777}\' +\n' +
+'\'#btn-restart{width:100%;padding:10px;border:none;border-radius:6px;font-size:.9em;cursor:pointer;transition:background .3s,opacity .3s}\' +\n' +
+'\'#btn-restart.idle{background:#444;color:#aaa}#btn-restart.active{background:#e67e22;color:#fff}\' +\n' +
+'\'#btn-restart:hover.active{background:#d35400}\' +\n' +
+'\'#last-check{font-size:.72em;color:#555;text-align:right;margin-top:10px}\' +\n' +
+'\'</style></head><body>\' +\n' +
+'\'<h1>LOTRO Death Tracker <span>v2.7</span></h1>\' +\n' +
+'\'<div class="status-grid">\' +\n' +
+'\'<div class="status-item"><div class="dot grey" id="dot-watcher"></div><div><div class="label">Watcher</div><div class="sublabel">Prozess-Monitor</div></div></div>\' +\n' +
+'\'<div class="status-item"><div class="dot grey" id="dot-client"></div><div><div class="label">Client</div><div class="sublabel">Daten-Sender (aktiv wenn LOTRO laeuft)</div></div></div>\' +\n' +
+'\'<div class="status-item"><div class="dot grey" id="dot-plugin"></div><div><div class="label">Plugin</div><div class="sublabel">LOTRO Plugin installiert</div></div></div>\' +\n' +
+'\'</div>\' +\n' +
+'\'<button id="btn-restart" class="idle" onclick="doRestart()">Watcher neu starten</button>\' +\n' +
+'\'<div id="last-check">Zuletzt geprueft: –</div>\' +\n' +
+'\'<script>\' +\n' +
+'\'function applyStatus(s){var states=["watcher","client","plugin"];for(var i=0;i<states.length;i++){var d=document.getElementById("dot-"+states[i]);if(d)d.className="dot "+(s[states[i]]?"green":"red");}var btn=document.getElementById("btn-restart");if(btn)btn.className=(s.watcher?"idle":"active");var lc=document.getElementById("last-check");if(lc&&s.lastCheck){var t=new Date(s.lastCheck);lc.textContent="Zuletzt geprueft: "+t.toLocaleTimeString("de-DE");}}\' +\n' +
+'\'function poll(){fetch("/status").then(function(r){return r.json();}).then(function(s){applyStatus(s);}).catch(function(){});}\' +\n' +
+'\'function doRestart(){if(!confirm("Watcher wirklich neu starten?"))return;fetch("/restart",{method:"POST"}).catch(function(){});setTimeout(function(){poll();},4000);}\' +\n' +
+'\'poll();setInterval(poll,3000);\' +\n' +
+'\'</script></body></html>\';\n' +
+'\n' +
+'acquireLock();\n' +
+'\n' +
+'var server = http.createServer(function(req, res) {\n' +
+'    if (req.method === \'GET\' && req.url === \'/status\') {\n' +
+'        var s = getStatus();\n' +
+'        res.writeHead(200, { \'Content-Type\': \'application/json\', \'Access-Control-Allow-Origin\': \'*\' });\n' +
+'        res.end(JSON.stringify(s));\n' +
+'    } else if (req.method === \'POST\' && req.url === \'/restart\') {\n' +
+'        doRestart(res);\n' +
+'    } else {\n' +
+'        res.writeHead(200, { \'Content-Type\': \'text/html; charset=utf-8\' });\n' +
+'        res.end(HTML_PAGE);\n' +
+'    }\n' +
+'});\n' +
+'\n' +
+'function tryListen() {\n' +
+'    server.listen(PORT, \'127.0.0.1\', function() {\n' +
+'        log(\'Status-Server gestartet: http://localhost:\' + PORT);\n' +
+'    });\n' +
+'}\n' +
+'\n' +
+'server.on(\'error\', function(e) {\n' +
+'    if (e.code === \'EADDRINUSE\' && portIndex < PORTS.length - 1) {\n' +
+'        portIndex++;\n' +
+'        PORT = PORTS[portIndex];\n' +
+'        log(\'Port belegt – versuche Port \' + PORT + \'...\');\n' +
+'        tryListen();\n' +
+'    } else {\n' +
+'        log(\'Port \' + PORT + \' Fehler: \' + e.message + \' – beende Status-Server.\');\n' +
+'        process.exit(1);\n' +
+'    }\n' +
+'});\n' +
+'\n' +
+'tryListen();\n' +
+'\n' +
+'process.on(\'SIGINT\', function() { releaseLock(); process.exit(0); });\n' +
+'process.on(\'SIGTERM\', function() { releaseLock(); process.exit(0); });\n' +
+'process.on(\'exit\', function() { releaseLock(); });\n';
+
+    fs.writeFileSync(STATUS_SERVER_JS, content, 'utf8');
+    console.log('Status-Server-Script erstellt:', STATUS_SERVER_JS);
+}
 
 // Erstelle Watcher-Script
 function createWatcherScript() {
@@ -46,28 +337,10 @@ const PID_FILE         = path.join(__dirname, 'watcher.pid');
 const LOCAL_DEATHS_FILE = path.join(__dirname, 'deaths.local.json');
 const WP_API           = 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1';
 
-// ── Sys-Tray ───────────────────────────────────────────────────────────────
-// Eigene Icon-Dateipfade (absoluter Pfad oder leer fuer eingebettete Minimal-Icons).
-// Zum Anpassen: Pfad zu einer 32x32 PNG-Datei eintragen.
-const CUSTOM_ICON_RED    = '';
-const CUSTOM_ICON_YELLOW = '';
-const CUSTOM_ICON_GREEN  = '';
-// Eingebettete Minimal-Icons: ICO fuer Windows (node-systray-v2 benoetigt ICO), PNG fuer Linux/Mac.
-const ICON_RED_B64    = '${process.platform === 'win32' ? ICON_RED_ICO_B64 : ICON_RED_PNG_B64}';
-const ICON_YELLOW_B64 = '${process.platform === 'win32' ? ICON_YELLOW_ICO_B64 : ICON_YELLOW_PNG_B64}';
-const ICON_GREEN_B64  = '${process.platform === 'win32' ? ICON_GREEN_ICO_B64 : ICON_GREEN_PNG_B64}';
-var SysTrayPkg = null;
-try { SysTrayPkg = require('node-systray-v2'); } catch (_) {}
-var SysTray = SysTrayPkg ? (SysTrayPkg.default || SysTrayPkg.SysTray || SysTrayPkg) : null;
-if (SysTray && typeof SysTray !== 'function') SysTray = null;
-const TRAY_AVAILABLE = !!SysTray;
-
 let clientProcess = null;
 let checkInterval = null;
 var prevLotroRunning = false;
 var remindOnNextStart = false;
-var trayInstance   = null;
-var lastTrayState  = 'none';
 
 function formatLocalTime(d) {
     var pad = function(n, w) { return String(n).padStart(w || 2, '0'); };
@@ -342,30 +615,29 @@ function syncLocalDeaths() {
         }
     });
 
-    var idx = 0;
+    // Charakter-Liste einmalig holen (statt N separate API-Aufrufe fuer N Charaktere)
+    https.get(WP_API + '/characters', { headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' } }, function(res) {
+        var data = '';
+        res.on('data', function(c) { data += c; });
+        res.on('end', function() {
+            var parsed;
+            try { parsed = JSON.parse(data); } catch (e) {
+                log('syncLocalDeaths: Ungueltige API-Antwort – uebersprungen.');
+                return;
+            }
+            if (!parsed || !parsed.success) {
+                log('syncLocalDeaths: API-Fehler – uebersprungen.');
+                return;
+            }
+            var chars = parsed.characters || [];
 
-    function processNext() {
-        if (idx >= stateFiles.length) return;
-        var entry = stateFiles[idx++];
-        var charName = entry.charName;
-        var currentPlugin = parseStateFile(entry.file);
+            var idx = 0;
+            function processNext() {
+                if (idx >= stateFiles.length) return;
+                var entry = stateFiles[idx++];
+                var charName = entry.charName;
+                var currentPlugin = parseStateFile(entry.file);
 
-        https.get(WP_API + '/characters', { headers: { 'User-Agent': 'LOTRO-Death-Tracker-Watcher' } }, function(res) {
-            var data = '';
-            res.on('data', function(c) { data += c; });
-            res.on('end', function() {
-                var parsed;
-                try { parsed = JSON.parse(data); } catch (e) {
-                    log('syncLocalDeaths: Ungueltige API-Antwort – uebersprungen.');
-                    processNext();
-                    return;
-                }
-                if (!parsed || !parsed.success) {
-                    log('syncLocalDeaths: API-Fehler – uebersprungen.');
-                    processNext();
-                    return;
-                }
-                var chars = parsed.characters || [];
                 var charData = null;
                 var charNameNorm = charName.toLowerCase().trim();
                 for (var i = 0; i < chars.length; i++) {
@@ -436,14 +708,12 @@ function syncLocalDeaths() {
                     }
                     processNext();
                 });
-            });
-        }).on('error', function(e) {
-            log('syncLocalDeaths: Netzwerkfehler – uebersprungen: ' + e.message);
-            processNext(); // naechsten Charakter trotzdem verarbeiten
+            }
+            processNext();
         });
-    }
-
-    processNext();
+    }).on('error', function(e) {
+        log('syncLocalDeaths: Netzwerkfehler – uebersprungen: ' + e.message);
+    });
 }
 
 function checkAndApplyUpdate() {
@@ -809,103 +1079,6 @@ function stopClient() {
     clientProcess = null;
 }
 
-// ── Sys-Tray Hilfsfunktionen ───────────────────────────────────────────────
-
-function isPluginActive() {
-    try {
-        var lotroPath = getLotroPath();
-        if (!fs.existsSync(lotroPath)) return false;
-        // Plugin als "aktiv" erkennen wenn die Plugin-Datei installiert ist.
-        // DeathTracker_Sync.plugindata existiert erst nach dem ersten Tod/Level-Up
-        // und waere fuer frische Charaktere immer falsch – daher Plugin-Manifest pruefen.
-        var pluginFile = path.join(lotroPath, 'Plugins', 'DodasWelt', 'DeathTracker.plugin');
-        if (fs.existsSync(pluginFile)) return true;
-    } catch (_) {}
-    return false;
-}
-
-function getTrayState(lotroRunning, clientRunning, pluginActive) {
-    if (!lotroRunning) return 'none';
-    if (clientRunning && pluginActive) return 'green';
-    if (clientRunning || pluginActive) return 'yellow';
-    return 'red';
-}
-
-function getIconData(color) {
-    var custom = color === 'red' ? CUSTOM_ICON_RED : (color === 'yellow' ? CUSTOM_ICON_YELLOW : CUSTOM_ICON_GREEN);
-    if (custom) {
-        try { if (fs.existsSync(custom)) return fs.readFileSync(custom).toString('base64'); } catch (_) {}
-    }
-    if (color === 'red')    return ICON_RED_B64;
-    if (color === 'yellow') return ICON_YELLOW_B64;
-    return ICON_GREEN_B64;
-}
-
-function getTrayTooltip(clientRunning, pluginActive) {
-    return 'LOTRO Death Tracker\\n' +
-        'Watcher:  laeuft\\n' +
-        'Client:   ' + (clientRunning ? 'laeuft' : 'nicht gestartet') + '\\n' +
-        'Plugin:   ' + (pluginActive  ? 'erkannt' : 'nicht erkannt');
-}
-
-function destroyTray() {
-    if (trayInstance) {
-        try { trayInstance.kill(); } catch (_) {}
-        trayInstance = null;
-        log('[TRAY] Icon entfernt.');
-    }
-}
-
-function updateTray(newState, lotroRunning, clientRunning, pluginActive) {
-    // Fuer den TRAY_AVAILABLE-Pfad: auch updaten wenn trayInstance fehlt obwohl sie existieren sollte
-    // (z.B. nach fehlgeschlagenem SysTray-Konstruktor). Verhindert dauerhaft fehlendes Icon.
-    var trayMissing = TRAY_AVAILABLE && (newState !== 'none' && trayInstance === null);
-    if (newState === lastTrayState && !trayMissing) return;
-
-    var oldState = lastTrayState;
-    // lastTrayState nur bei echtem Zustandswechsel loggen und setzen
-    if (newState !== oldState) {
-        lastTrayState = newState;
-        log('[TRAY] Status: ' + oldState.toUpperCase() + ' \u2192 ' + newState.toUpperCase() +
-            '  (LOTRO: ' + (lotroRunning    ? '\u2713' : '\u2717') +
-            '  Client: ' + (clientRunning   ? '\u2713' : '\u2717') +
-            '  Plugin: ' + (pluginActive    ? '\u2713' : '\u2717') + ')');
-    }
-
-    if (!TRAY_AVAILABLE) {
-        // Linux-Fallback ohne Tray-Bibliothek: notify-send nur bei Zustandswechseln (nicht bei Retries)
-        if (process.platform === 'linux' && newState !== 'none' && newState !== oldState) {
-            try { spawnSync('notify-send', ['LOTRO Death Tracker', getTrayTooltip(clientRunning, pluginActive)]); } catch (_) {}
-        }
-        return;
-    }
-
-    destroyTray();
-    if (newState === 'none') return;
-
-    try {
-        var st = new SysTray({
-            menu: {
-                icon: getIconData(newState),
-                title: '',
-                tooltip: getTrayTooltip(clientRunning, pluginActive),
-                // Mindestens ein Eintrag erforderlich – die Go-Binary erwartet ein nichtleeres items-Array.
-                items: [{ title: 'LOTRO Death Tracker', tooltip: '', checked: false, enabled: false }]
-            },
-            debug: false,
-            copyDir: true
-        });
-        st.onClick(function() {});
-        trayInstance = st;
-    } catch (e) {
-        log('[TRAY] Fehler beim Erstellen: ' + e.message);
-        // lastTrayState zuruecksetzen: naechster Tick erkennt Zustandsaenderung und versucht erneut
-        lastTrayState = oldState;
-    }
-}
-
-// ── Ende Sys-Tray ──────────────────────────────────────────────────────────
-
 function checkLOTRO() {
     isLOTRORunning((lotroRunning) => {
         // H3: Signal-0-Check statt unzuverlaessigem .killed-Flag.
@@ -935,17 +1108,13 @@ function checkLOTRO() {
         } else if (!lotroRunning && clientRunning) {
             stopClient();
         }
-
-        // Tray-Status aktualisieren (alle 5s, aber nur bei Aenderung wirksam)
-        var pluginActive = isPluginActive();
-        updateTray(getTrayState(lotroRunning, clientRunning, pluginActive), lotroRunning, clientRunning, pluginActive);
     });
 }
 
 log('=================================');
 log('LOTRO Watcher gestartet');
 log('Ueberwacht: ' + (process.platform === 'linux' ? 'lotroclient (pgrep) + proton/212500' : 'lotroclient64.exe & lotroclient.exe'));
-log('Sys-Tray: ' + (TRAY_AVAILABLE ? 'verfuegbar' : 'nicht verfuegbar' + (process.platform === 'linux' ? ' (notify-send Fallback)' : ' – node-systray-v2 nicht geladen')));
+log('Status-Seite: http://localhost:7890 (separater Prozess)');
 log('=================================');
 
 // Singleton-Lock: verhindert mehrfachen Start (wuerde mehrere Clients → doppelte Events erzeugen)
@@ -983,7 +1152,6 @@ process.on('SIGINT', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
-    destroyTray();
     releaseLock();
     process.exit(0);
 });
@@ -992,12 +1160,11 @@ process.on('SIGTERM', () => {
     log('Watcher wird beendet...');
     if (checkInterval) clearInterval(checkInterval);
     stopClient();
-    destroyTray();
     releaseLock();
     process.exit(0);
 });
 
-process.on('exit', function() { try { destroyTray(); } catch (_) {} releaseLock(); });
+process.on('exit', function() { releaseLock(); });
 `;
     
     fs.writeFileSync(WATCHER_JS, watcherContent, 'utf8');
@@ -1042,12 +1209,28 @@ function installLinux() {
             } catch (e) {}
         }
 
+        // Laufenden Status-Server beenden
+        const ssPidPath = path.join(__dirname, 'status-server.pid');
+        if (fs.existsSync(ssPidPath)) {
+            try {
+                const ssPid = parseInt(fs.readFileSync(ssPidPath, 'utf8').trim(), 10);
+                if (ssPid) { try { process.kill(ssPid, 'SIGTERM'); } catch (_) {} }
+                fs.unlinkSync(ssPidPath);
+            } catch (e) {}
+        }
+
         const { spawn } = require('child_process');
         const watcher = spawn(process.execPath, [WATCHER_JS], { detached: true, stdio: 'ignore' });
         watcher.unref();
 
+        // Status-Server starten
+        createStatusServerScript();
+        const statusSrv = spawn(process.execPath, [STATUS_SERVER_JS], { detached: true, stdio: 'ignore' });
+        statusSrv.unref();
+
         console.log('Watcher gestartet!');
         console.log('');
+        console.log('Status-Seite: http://localhost:7890');
         console.log('Logs: ' + path.join(__dirname, 'watcher.log'));
         process.exit(0);
     } catch (error) {
@@ -1113,17 +1296,29 @@ function install() {
         console.log('🚀 Starte Watcher JETZT im Hintergrund...');
         console.log('');
 
-        // Laufenden Watcher beenden bevor ein neuer gestartet wird (verhindert doppelte Icons)
+        // Laufenden Watcher beenden bevor ein neuer gestartet wird
         const pidFilePath = path.join(__dirname, 'watcher.pid');
         if (fs.existsSync(pidFilePath)) {
             try {
                 const oldPid = parseInt(fs.readFileSync(pidFilePath, 'utf8').trim(), 10);
                 if (oldPid && oldPid !== process.pid) {
-                    // taskkill /F ist auf Windows zuverlaessiger als SIGTERM
                     const { spawnSync: _spawnSync } = require('child_process');
                     _spawnSync('taskkill', ['/F', '/PID', String(oldPid)], { windowsHide: true, stdio: 'ignore' });
                 }
                 fs.unlinkSync(pidFilePath);
+            } catch (e) {}
+        }
+
+        // Laufenden Status-Server beenden
+        const ssPidPath = path.join(__dirname, 'status-server.pid');
+        if (fs.existsSync(ssPidPath)) {
+            try {
+                const ssPid = parseInt(fs.readFileSync(ssPidPath, 'utf8').trim(), 10);
+                if (ssPid) {
+                    const { spawnSync: _spawnSync2 } = require('child_process');
+                    _spawnSync2('taskkill', ['/F', '/PID', String(ssPid)], { windowsHide: true, stdio: 'ignore' });
+                }
+                fs.unlinkSync(ssPidPath);
             } catch (e) {}
         }
 
@@ -1134,8 +1329,17 @@ function install() {
             stdio: 'ignore',
             windowsHide: true
         });
-        watcher.unref(); // Erlaubt diesem Prozess zu beenden ohne Watcher zu killen
-        
+        watcher.unref();
+
+        // Status-Server starten (Singleton-Lock verhindert Doppelstart)
+        createStatusServerScript();
+        const statusSrv = spawn(process.execPath, [STATUS_SERVER_JS], {
+            detached: true,
+            stdio: 'ignore',
+            windowsHide: true
+        });
+        statusSrv.unref();
+
         console.log('✅ Watcher läuft jetzt im Hintergrund!');
         console.log('');
         console.log('🎮 Du kannst jetzt sofort LOTRO starten:');
@@ -1143,11 +1347,9 @@ function install() {
         console.log('   → Client startet automatisch');
         console.log('   → Keine weitere Aktion nötig!');
         console.log('');
-        console.log('📊 Prüfen ob es funktioniert:');
-        console.log('  1. Starte LOTRO');
-        console.log('  2. Warte 5-10 Sekunden');
-        console.log('  3. Task-Manager → Details → node.exe');
-        console.log('  4. Sollte 2x laufen (Watcher + Client)');
+        console.log('📊 Status-Seite (OBS Benutzerdefiniertes Browser-Dock):');
+        console.log('   http://localhost:7890');
+        console.log('   OBS → Docks → Benutzerdefinierte Browser-Docks → URL eingeben');
         console.log('');
         console.log('📝 Logs:');
         console.log('  Watcher: ' + path.join(__dirname, 'watcher.log'));

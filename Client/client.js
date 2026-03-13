@@ -1,7 +1,7 @@
-// LOTRO Death & Level Tracker - Client Component v2.6
+// LOTRO Death & Level Tracker - Client Component v2.7
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 2.6
+// Version: 2.7
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,10 +13,14 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '2.6',
+    version: '2.7',
     autoRestart: false,
     logFile: path.join(__dirname, 'client.log')
 };
+
+// PID-Datei schreiben damit der Status-Server den Client-Prozess erkennen kann
+const CLIENT_PID_FILE = path.join(__dirname, 'client.pid');
+try { require('fs').writeFileSync(CLIENT_PID_FILE, String(process.pid)); } catch (_) {}
 
 // State
 let lastProcessedTimestamp = 0;
@@ -392,13 +396,18 @@ async function main() {
         await watcher.close();
         log(`Client stopped`, 'success');
         console.log('=================================');
+        try { require('fs').unlinkSync(CLIENT_PID_FILE); } catch (_) {}
         process.exit(0);
     });
 }
 
+// PID-Datei beim Beenden loeschen
+process.on('exit', function() { try { require('fs').unlinkSync(CLIENT_PID_FILE); } catch (_) {} });
+
 // Error handling
 process.on('uncaughtException', async (error) => {
     await log(`Uncaught exception: ${error.message}`, 'error');
+    try { require('fs').unlinkSync(CLIENT_PID_FILE); } catch (_) {}
     if (CONFIG.autoRestart) {
         await log(`Restarting in 5 seconds...`, 'warning');
         setTimeout(() => {

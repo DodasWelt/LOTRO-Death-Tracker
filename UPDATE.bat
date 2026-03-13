@@ -1,5 +1,5 @@
 @echo off
-title LOTRO Death Tracker - Update auf v2.6
+title LOTRO Death Tracker - Update auf v2.7
 
 REM Wechsle in das Verzeichnis wo die BAT-Datei liegt
 cd /d "%~dp0"
@@ -14,7 +14,7 @@ echo [%DATE% %TIME%] Verzeichnis: %~dp0 >> "%UPDATE_LOG%"
 echo.
 echo ================================================================
 echo.
-echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.4
+echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.7
 echo.
 echo ================================================================
 echo.
@@ -335,7 +335,7 @@ echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.6
+echo                  Installierte Version: 2.7
 echo.
 echo ================================================================
 echo.
@@ -355,7 +355,7 @@ echo ================================================================
 echo.
 
 REM Zeige Erfolgs-Popup - sichtbar auch wenn das CMD-Fenster sich schliesst
-echo MsgBox "LOTRO Death Tracker v2.6 aktualisiert! Watcher laeuft im Hintergrund. Windows-Neustart ist NICHT noetig.", 64, "Update fertig!" > "%TEMP%\_lotro_update_done.vbs"
+echo MsgBox "LOTRO Death Tracker v2.7 aktualisiert! Watcher laeuft im Hintergrund. Windows-Neustart ist NICHT noetig.", 64, "Update fertig!" > "%TEMP%\_lotro_update_done.vbs"
 cscript //nologo "%TEMP%\_lotro_update_done.vbs"
 del "%TEMP%\_lotro_update_done.vbs" >nul 2>&1
 echo [%DATE% %TIME%] UPDATE abgeschlossen (Popup bestaetigt) >> "%UPDATE_LOG%"

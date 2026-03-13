@@ -11,7 +11,7 @@
 --        Datenformat (kein externer Netzwerkzugriff aus diesem Script heraus).
 --
 -- Autor:   DodasWelt / Herrin Inge (https://www.dodaswelt.de)
--- Version: 2.6
+-- Version: 2.7
 -- Lizenz:  Keine schaedlichen Aktionen. Offen einsehbarer Quellcode.
 -- =============================================================================
 
@@ -25,10 +25,9 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "2.6",
+    version = "2.7",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
-    lastLevelWasLogged = false,
     isPlayerDead = false,
     lastKnownLevel = 0,
     currentLocation = "Unknown Location"
@@ -63,21 +62,6 @@ DeathTracker.ClassNames = {
     [215] = "Schläger",
     [216] = "Seefahrer",
 };
-
--- Try to get current location
-function DeathTracker:UpdateLocation()
-    local location = "Unknown Location";
-    
-    -- Try to get area name from Effects (this sometimes contains region)
-    local effects = self.player:GetEffects();
-    if effects then
-        -- Effects can sometimes give us zone information
-    end
-    
-    -- Store for later use
-    self.Config.currentLocation = location;
-    return location;
-end
 
 -- Initialize the plugin
 function DeathTracker:Initialize()
