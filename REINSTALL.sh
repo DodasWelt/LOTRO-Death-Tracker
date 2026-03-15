@@ -250,6 +250,8 @@ if [ -z "$ZIP_URL" ]; then
     err "ZIP-Asset nicht in GitHub-Release gefunden"
     echo ""
     echo "[FEHLER] Download-URL konnte nicht ermittelt werden!"
+    echo "Hinweis: releases/latest gibt nur stabile Releases zurueck."
+    echo "         Bei einem Pre-Release muss dieser erst als stabiler Release markiert sein."
     echo "Es wurden KEINE Aenderungen am System vorgenommen."
     exit 1
 fi

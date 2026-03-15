@@ -119,21 +119,29 @@ echo [SCHRITT 1/3] Ermittle neueste Version von GitHub...
 echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 1: GitHub API-Abfrage >> "%REINSTALL_LOG%"
 
-REM PowerShell-Skript zum Ermitteln der ZIP-URL (in Datei, um CMD-Escape-Probleme zu umgehen)
+REM PS1-Datei in %SystemRoot%\Temp (kein Leerzeichen im Pfad, auch bei Leerzeichen im Benutzernamen)
+set "_GH_PS=%SystemRoot%\Temp\_lotro_gh_url.ps1"
 (
 echo $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing
 echo $a = $r.assets ^| Where-Object { $_.name -like 'LOTRO-Death-Tracker-v*.zip' } ^| Select-Object -First 1
 echo if ($a) { $a.browser_download_url } else { 'ERROR_NO_ASSET' }
-) > "%TEMP%\_lotro_gh_url.ps1"
+) > "%_GH_PS%"
+echo [%DATE% %TIME%] Schritt 1: PS1 erstellt in %_GH_PS% >> "%REINSTALL_LOG%"
 
 set "ZIP_URL="
-for /f "delims=" %%u in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%TEMP%\_lotro_gh_url.ps1" 2^>nul') do set "ZIP_URL=%%u"
-del "%TEMP%\_lotro_gh_url.ps1" >nul 2>&1
+for /f "delims=" %%u in ('powershell -NoProfile -ExecutionPolicy Bypass -File %_GH_PS% 2^>nul') do set "ZIP_URL=%%u"
+del "%_GH_PS%" >nul 2>&1
 
 set "RELEASE_TAG=unbekannt"
-for /f "delims=" %%t in ('powershell -NoProfile -Command "try { (Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing).tag_name } catch { '' }" 2^>nul') do set "RELEASE_TAG=%%t"
+set "_GH_TAG_PS=%SystemRoot%\Temp\_lotro_gh_tag.ps1"
+(
+echo try { ^(Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing^).tag_name } catch { 'unbekannt' }
+) > "%_GH_TAG_PS%"
+for /f "delims=" %%t in ('powershell -NoProfile -ExecutionPolicy Bypass -File %_GH_TAG_PS% 2^>nul') do set "RELEASE_TAG=%%t"
+del "%_GH_TAG_PS%" >nul 2>&1
 
 if not defined ZIP_URL goto :github_error
+if "%ZIP_URL%"=="" goto :github_error
 if "%ZIP_URL%"=="ERROR_NO_ASSET" goto :github_error
 if "%ZIP_URL:~0,5%"=="ERROR" goto :github_error
 
@@ -143,13 +151,16 @@ echo.
 goto :download
 
 :github_error
-echo [%DATE% %TIME%] FEHLER: GitHub API nicht erreichbar (%ZIP_URL%) >> "%REINSTALL_LOG%"
+echo [%DATE% %TIME%] FEHLER: GitHub API nicht erreichbar (ZIP_URL='%ZIP_URL%') >> "%REINSTALL_LOG%"
 echo.
 echo [FEHLER] Neueste Version konnte nicht von GitHub geladen werden!
 echo.
 echo Moegliche Ursachen:
 echo   - Kein Internetzugang
 echo   - GitHub nicht erreichbar
+echo   - Nur Pre-Release vorhanden (releases/latest gibt nur stabile Releases zurueck)
+echo.
+echo Diagnose-Log: %REINSTALL_LOG%
 echo.
 echo Es wurden KEINE Aenderungen am System vorgenommen.
 echo.
@@ -227,12 +238,17 @@ if %errorLevel% neq 0 (
 )
 
 echo [%DATE% %TIME%] Schritt 3: Start Runner: %RUNNER% --runner %STAGING% >> "%REINSTALL_LOG%"
-start "" cmd /c "%RUNNER%" --runner "%STAGING%"
+start "LOTRO Death Tracker - Neuinstallation laeuft..." cmd /c "%RUNNER%" --runner "%STAGING%"
 echo.
-echo   - Neuinstallation laeuft in einem neuen Fenster...
-echo   - Bitte warte auf das Abschluss-Popup.
+echo ================================================================
 echo.
-timeout /t 2 /nobreak >nul
+echo   Dieses Fenster schliesst sich jetzt - das ist NORMAL!
+echo   Die Neuinstallation laeuft weiter im neuen Fenster oben.
+echo   Bitte warte auf das Abschluss-Popup (ca. 1-2 Minuten).
+echo.
+echo ================================================================
+echo.
+timeout /t 4 /nobreak >nul
 exit /b 0
 
 REM ════════════════════════════════════════════════════════════════════════════
