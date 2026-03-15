@@ -12,9 +12,20 @@ REM NORMAL-FLOW: Checks, Download, Staging
 REM ════════════════════════════════════════════════════════════════════════════
 cd /d "%~dp0"
 
-set "REINSTALL_LOG=%~dp0reinstall.log"
+REM ─── Konfiguration ───────────────────────────────────────────────────────────
+REM USE_PRERELEASE=1 -> neuester Pre-Release (fuer Tests)
+REM USE_PRERELEASE=0 -> stabiler Release (Standard, Produktion)
+set "USE_PRERELEASE=0"
+
+set "REINSTALL_LOG=%TEMP%\LOTRO-DT-reinstall.log"
 echo [%DATE% %TIME%] REINSTALL.bat gestartet > "%REINSTALL_LOG%"
-echo [%DATE% %TIME%] Verzeichnis: %~dp0 >> "%REINSTALL_LOG%"
+echo [%DATE% %TIME%] USE_PRERELEASE=%USE_PRERELEASE% >> "%REINSTALL_LOG%"
+
+REM ── Ausfuehrungsort pruefen ───────────────────────────────────────────────────
+set "_SCRIPT_DIR=%~dp0"
+set "RUN_FROM_INSTALL_DIR=0"
+if /i "%_SCRIPT_DIR%"=="C:\LOTRO-Death-Tracker\" set "RUN_FROM_INSTALL_DIR=1"
+echo [%DATE% %TIME%] Ausfuehrungsort: %_SCRIPT_DIR% (Installationsverzeichnis: %RUN_FROM_INSTALL_DIR%) >> "%REINSTALL_LOG%"
 
 echo.
 echo ================================================================
@@ -119,24 +130,47 @@ echo [SCHRITT 1/3] Ermittle neueste Version von GitHub...
 echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 1: GitHub API-Abfrage >> "%REINSTALL_LOG%"
 
-REM PS1-Datei in %SystemRoot%\Temp (kein Leerzeichen im Pfad, auch bei Leerzeichen im Benutzernamen)
+REM PS1-Dateien in %SystemRoot%\Temp (kein Leerzeichen im Pfad, auch bei Leerzeichen im Benutzernamen)
 set "_GH_PS=%SystemRoot%\Temp\_lotro_gh_url.ps1"
+set "_GH_TAG_PS=%SystemRoot%\Temp\_lotro_gh_tag.ps1"
+
+if "%USE_PRERELEASE%"=="1" goto :write_prerelease_ps1
+
+REM Stabiler Release via releases/latest
 (
 echo $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing
 echo $a = $r.assets ^| Where-Object { $_.name -like 'LOTRO-Death-Tracker-v*.zip' } ^| Select-Object -First 1
 echo if ($a) { $a.browser_download_url } else { 'ERROR_NO_ASSET' }
 ) > "%_GH_PS%"
-echo [%DATE% %TIME%] Schritt 1: PS1 erstellt in %_GH_PS% >> "%REINSTALL_LOG%"
+(
+echo try { ^(Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing^).tag_name } catch { 'unbekannt' }
+) > "%_GH_TAG_PS%"
+goto :run_gh_ps1
+
+:write_prerelease_ps1
+REM Pre-Release: neuester Pre-Release via /releases-Endpunkt
+(
+echo $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing
+echo $pre = $releases ^| Where-Object { $_.prerelease -eq $true } ^| Select-Object -First 1
+echo if (-not $pre) { $pre = $releases ^| Select-Object -First 1 }
+echo $a = $pre.assets ^| Where-Object { $_.name -like 'LOTRO-Death-Tracker-v*.zip' } ^| Select-Object -First 1
+echo if ($a) { $a.browser_download_url } else { 'ERROR_NO_ASSET' }
+) > "%_GH_PS%"
+(
+echo $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing
+echo $pre = $releases ^| Where-Object { $_.prerelease -eq $true } ^| Select-Object -First 1
+echo if (-not $pre) { $pre = $releases ^| Select-Object -First 1 }
+echo if ($pre) { $pre.tag_name } else { 'unbekannt' }
+) > "%_GH_TAG_PS%"
+
+:run_gh_ps1
+echo [%DATE% %TIME%] Schritt 1: PS1 erstellt (USE_PRERELEASE=%USE_PRERELEASE%) >> "%REINSTALL_LOG%"
 
 set "ZIP_URL="
 for /f "delims=" %%u in ('powershell -NoProfile -ExecutionPolicy Bypass -File %_GH_PS% 2^>nul') do set "ZIP_URL=%%u"
 del "%_GH_PS%" >nul 2>&1
 
 set "RELEASE_TAG=unbekannt"
-set "_GH_TAG_PS=%SystemRoot%\Temp\_lotro_gh_tag.ps1"
-(
-echo try { ^(Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing^).tag_name } catch { 'unbekannt' }
-) > "%_GH_TAG_PS%"
 for /f "delims=" %%t in ('powershell -NoProfile -ExecutionPolicy Bypass -File %_GH_TAG_PS% 2^>nul') do set "RELEASE_TAG=%%t"
 del "%_GH_TAG_PS%" >nul 2>&1
 
@@ -158,7 +192,8 @@ echo.
 echo Moegliche Ursachen:
 echo   - Kein Internetzugang
 echo   - GitHub nicht erreichbar
-echo   - Nur Pre-Release vorhanden (releases/latest gibt nur stabile Releases zurueck)
+if "%USE_PRERELEASE%"=="0" echo   - Nur Pre-Release vorhanden? USE_PRERELEASE=1 in REINSTALL.bat setzen
+if "%USE_PRERELEASE%"=="1" echo   - Pre-Release-Modus aktiv, aber kein Asset gefunden
 echo.
 echo Diagnose-Log: %REINSTALL_LOG%
 echo.

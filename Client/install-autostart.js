@@ -339,6 +339,7 @@ const os = require('os');
 const CLIENT_PATH      = '${CLIENT_PATH.replace(/\\/g, '\\\\')}';
 const LOG_PATH         = path.join(__dirname, 'watcher.log');
 const GITHUB_REPO      = 'DodasWelt/LOTRO-Death-Tracker';
+const USE_PRERELEASE   = false; // true = neuester Pre-Release wenn vorhanden; false = stabiler Release (Standard)
 const VERSION_FILE     = path.join(__dirname, 'version.json');
 const UPDATER_PATH     = path.join(__dirname, 'updater.js');
 const PID_FILE         = path.join(__dirname, 'watcher.pid');
@@ -743,9 +744,13 @@ function checkAndApplyUpdate() {
         }
     } catch (e) { log('Staging-Bereinigung: ' + e.message); }
 
+    const releaseApiPath = USE_PRERELEASE
+        ? ('/repos/' + GITHUB_REPO + '/releases')
+        : ('/repos/' + GITHUB_REPO + '/releases/latest');
+    if (USE_PRERELEASE) log('Update-Check: Pre-Release-Modus aktiv – suche neuesten Pre-Release...');
     const req = https.request({
         hostname: 'api.github.com',
-        path: '/repos/' + GITHUB_REPO + '/releases/latest',
+        path: releaseApiPath,
         method: 'GET',
         headers: {
             'User-Agent': 'LOTRO-Death-Tracker-Watcher',
@@ -760,7 +765,16 @@ function checkAndApplyUpdate() {
                 return;
             }
             let release;
-            try { release = JSON.parse(data); } catch (e) {
+            try {
+                const parsed = JSON.parse(data);
+                if (USE_PRERELEASE && Array.isArray(parsed)) {
+                    release = parsed.find(function(r) { return r.prerelease === true; }) || parsed[0];
+                    if (!release) { log('Update-Check: keine Releases gefunden – uebersprungen'); return; }
+                    log('Pre-Release-Modus: verwende ' + (release.prerelease ? 'Pre-Release' : 'stabiler Release') + ' ' + release.tag_name);
+                } else {
+                    release = parsed;
+                }
+            } catch (e) {
                 log('Update-Check: JSON-Fehler – uebersprungen');
                 return;
             }

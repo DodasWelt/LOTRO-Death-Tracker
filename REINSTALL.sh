@@ -136,8 +136,17 @@ fi
 # ════════════════════════════════════════════════════════════════════════════
 # NORMAL-FLOW: Checks, Download, Staging
 # ════════════════════════════════════════════════════════════════════════════
+
+# ─── Konfiguration ──────────────────────────────────────────────────────────
+# USE_PRERELEASE=1 -> neuester Pre-Release (fuer Tests)
+# USE_PRERELEASE=0 -> stabiler Release (Standard, Produktion)
+USE_PRERELEASE=0
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG="$SCRIPT_DIR/reinstall.log"
+LOG="/tmp/lotro-dt-reinstall.log"
+INSTALL_DIR_CHECK="$HOME/.local/share/lotro-death-tracker"
+RUN_FROM_INSTALL_DIR=0
+if [ "$SCRIPT_DIR" = "$INSTALL_DIR_CHECK" ]; then RUN_FROM_INSTALL_DIR=1; fi
 
 log() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] $*" | tee -a "$LOG"; }
 err() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] FEHLER: $*" | tee -a "$LOG" >&2; }
@@ -152,6 +161,7 @@ echo "installiert den LOTRO Death Tracker komplett neu."
 echo ""
 
 log "REINSTALL.sh gestartet"
+log "USE_PRERELEASE=$USE_PRERELEASE | Ausfuehrungsort: $SCRIPT_DIR (Installationsverzeichnis: $RUN_FROM_INSTALL_DIR)"
 
 # Abhaengigkeiten pruefen
 log "Pruefe Abhaengigkeiten..."
@@ -212,12 +222,16 @@ if [ "$LOTRO_RUNNING" = "1" ]; then
 fi
 
 # GitHub API: neueste Version und ZIP-URL
-log "Schritt 1: GitHub API-Abfrage..."
+log "Schritt 1: GitHub API-Abfrage (USE_PRERELEASE=$USE_PRERELEASE)..."
 echo ""
 echo "[Schritt 1/3] Ermittle neueste Version von GitHub..."
 
 GITHUB_RESPONSE=""
-GITHUB_RESPONSE=$(curl -fsSL "https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest" 2>/dev/null) || true
+if [ "$USE_PRERELEASE" = "1" ]; then
+    GITHUB_RESPONSE=$(curl -fsSL "https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases" 2>/dev/null) || true
+else
+    GITHUB_RESPONSE=$(curl -fsSL "https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest" 2>/dev/null) || true
+fi
 
 if [ -z "$GITHUB_RESPONSE" ]; then
     err "GitHub API nicht erreichbar. Kein Internetzugang?"
@@ -227,7 +241,30 @@ if [ -z "$GITHUB_RESPONSE" ]; then
     exit 1
 fi
 
-ZIP_URL=$(echo "$GITHUB_RESPONSE" | python3 -c "
+if [ "$USE_PRERELEASE" = "1" ]; then
+    ZIP_URL=$(echo "$GITHUB_RESPONSE" | python3 -c "
+import sys, json
+try:
+    releases = json.load(sys.stdin)
+    if not isinstance(releases, list): releases = [releases]
+    rel = next((r for r in releases if r.get('prerelease')), releases[0] if releases else None)
+    assets = [a for a in rel.get('assets', []) if a['name'].startswith('LOTRO-Death-Tracker-v') and a['name'].endswith('.zip')] if rel else []
+    print(assets[0]['browser_download_url'] if assets else '')
+except Exception as e:
+    print('')
+" 2>/dev/null)
+    RELEASE_TAG=$(echo "$GITHUB_RESPONSE" | python3 -c "
+import sys, json
+try:
+    releases = json.load(sys.stdin)
+    if not isinstance(releases, list): releases = [releases]
+    rel = next((r for r in releases if r.get('prerelease')), releases[0] if releases else None)
+    print(rel.get('tag_name', '') if rel else '')
+except:
+    print('')
+" 2>/dev/null)
+else
+    ZIP_URL=$(echo "$GITHUB_RESPONSE" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -236,8 +273,7 @@ try:
 except Exception as e:
     print('')
 " 2>/dev/null)
-
-RELEASE_TAG=$(echo "$GITHUB_RESPONSE" | python3 -c "
+    RELEASE_TAG=$(echo "$GITHUB_RESPONSE" | python3 -c "
 import sys, json
 try:
     d = json.load(sys.stdin)
@@ -245,13 +281,18 @@ try:
 except:
     print('')
 " 2>/dev/null)
+fi
 
 if [ -z "$ZIP_URL" ]; then
     err "ZIP-Asset nicht in GitHub-Release gefunden"
     echo ""
     echo "[FEHLER] Download-URL konnte nicht ermittelt werden!"
-    echo "Hinweis: releases/latest gibt nur stabile Releases zurueck."
-    echo "         Bei einem Pre-Release muss dieser erst als stabiler Release markiert sein."
+    if [ "$USE_PRERELEASE" = "0" ]; then
+        echo "Hinweis: releases/latest gibt nur stabile Releases zurueck."
+        echo "         Nur Pre-Release vorhanden? USE_PRERELEASE=1 in REINSTALL.sh setzen."
+    else
+        echo "Hinweis: Pre-Release-Modus aktiv, aber kein Asset gefunden."
+    fi
     echo "Es wurden KEINE Aenderungen am System vorgenommen."
     exit 1
 fi
