@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Linux Update-Skript
-# Version: 2.7
+# Version: 3.0
 # Aktualisiert eine bestehende Installation.
 
 set -euo pipefail
@@ -13,7 +13,7 @@ err() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] FEHLER: $*" | tee -a "$LOG" >&2; }
 
 echo ""
 echo "================================================="
-echo " LOTRO Death Tracker - Update (Linux) v2.7"
+echo " LOTRO Death Tracker - Update (Linux) v3.0"
 echo "================================================="
 echo ""
 
@@ -42,6 +42,17 @@ sleep 1
 log "Kopiere neue Dateien nach $INSTALL_DIR ..."
 cp -r "$SCRIPT_DIR/Client/"* "$INSTALL_DIR/"
 log "Dateien kopiert."
+
+# UNINSTALL.sh + REINSTALL.sh aktualisieren
+for script in UNINSTALL.sh REINSTALL.sh; do
+    if [ -f "$SCRIPT_DIR/$script" ]; then
+        cp "$SCRIPT_DIR/$script" "$INSTALL_DIR/$script"
+        chmod +x "$INSTALL_DIR/$script"
+        log "$script aktualisiert in $INSTALL_DIR"
+    else
+        log "[WARNUNG] $script nicht gefunden - wird nicht kopiert."
+    fi
+done
 
 # npm install
 log "Installiere npm-Pakete..."
@@ -141,7 +152,7 @@ fi
 # Erfolgsmeldung
 echo ""
 echo "================================================="
-echo " Update auf v2.7 abgeschlossen!"
+echo " Update auf v3.0 abgeschlossen!"
 echo "================================================="
 echo ""
 echo "Der Watcher wurde neu gestartet."
@@ -149,7 +160,7 @@ echo ""
 echo "Logs: $INSTALL_DIR/watcher.log"
 echo ""
 if command -v notify-send &>/dev/null; then
-    notify-send "LOTRO Death Tracker" "Update auf v2.7 abgeschlossen!"
+    notify-send "LOTRO Death Tracker" "Update auf v3.0 abgeschlossen!"
 fi
 
 log "Update abgeschlossen."

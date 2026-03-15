@@ -1,5 +1,5 @@
-// LOTRO Event Tracker - Simple Startup Autostart
-// Version: 3.1.0 - Nutzt Windows Startup-Ordner (funktioniert immer!)
+// LOTRO Death Tracker - Autostart-Installation und Watcher/Status-Server-Setup
+// Version: 3.0
 
 const path = require('path');
 const fs = require('fs');
@@ -19,14 +19,18 @@ const SHORTCUT_PATH = IS_LINUX
     ? path.join(os.homedir(), '.config', 'autostart', 'lotro-death-tracker.desktop')
     : path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker.vbs');
 
-const STATUS_SERVER_JS = path.join(__dirname, 'lotro-status-server.js');
+const STATUS_SERVER_JS  = path.join(__dirname, 'lotro-status-server.js');
+const STATUS_SERVER_VBS = path.join(__dirname, 'start-lotro-status-server.vbs');
+const STATUS_SHORTCUT_PATH = IS_LINUX
+    ? path.join(os.homedir(), '.config', 'autostart', 'lotro-death-tracker-status.desktop')
+    : path.join(STARTUP_FOLDER, 'LOTRO-Death-Tracker-Status.vbs');
 
 // Erstelle Status-Server-Script
 function createStatusServerScript() {
     const CLIENT_PATH_ESC = CLIENT_PATH.replace(/\\/g, '\\\\');
     const DIR_ESC = __dirname.replace(/\\/g, '\\\\');
 
-    const content = '// LOTRO Death Tracker - Status-Server v2.7\n' +
+    const content = '// LOTRO Death Tracker - Status-Server v3.0\n' +
 '// Separater Prozess: laeuft unabhaengig vom Watcher.\n' +
 '// OBS Browser-Dock: http://localhost:7890\n' +
 'const http = require(\'http\');\n' +
@@ -97,6 +101,8 @@ function createStatusServerScript() {
 '    } catch (e) { return false; }\n' +
 '}\n' +
 '\n' +
+'// SYNC: getLotroPath ist 4x implementiert (client.js, updater.js, Watcher-Template, Status-Server-Template).\n' +
+'// Bei Aenderungen ALLE 4 Stellen synchron halten!\n' +
 'function getLotroPathCached() {\n' +
 '    if (cachedLotroPath) return cachedLotroPath;\n' +
 '    var lotroDir = \'The Lord of the Rings Online\';\n' +
@@ -146,6 +152,8 @@ function createStatusServerScript() {
 '        var m = (r.stdout || \'\').match(/Personal\\s+REG_SZ\\s+(.+)/);\n' +
 '        if (m) { var p = path.join(m[1].trim(), lotroDir); if (fs.existsSync(p)) { cachedLotroPath = p; return cachedLotroPath; } }\n' +
 '    } catch (_) {}\n' +
+'    var od = path.join(os.homedir(), \'OneDrive\', \'Documents\', lotroDir);\n' +
+'    if (fs.existsSync(od)) { cachedLotroPath = od; return cachedLotroPath; }\n' +
 '    cachedLotroPath = path.join(os.homedir(), \'Documents\', lotroDir);\n' +
 '    return cachedLotroPath;\n' +
 '}\n' +
@@ -261,7 +269,7 @@ function createStatusServerScript() {
 '\'#btn-restart:hover.active{background:#d35400}\' +\n' +
 '\'#last-check{font-size:.72em;color:#555;text-align:right;margin-top:10px}\' +\n' +
 '\'</style></head><body>\' +\n' +
-'\'<h1>LOTRO Death Tracker <span>v2.7</span></h1>\' +\n' +
+'\'<h1>LOTRO Death Tracker <span>v3.0</span></h1>\' +\n' +
 '\'<div class="status-grid">\' +\n' +
 '\'<div class="status-item"><div class="dot grey" id="dot-watcher"></div><div><div class="label">Watcher</div><div class="sublabel">Prozess-Monitor</div></div></div>\' +\n' +
 '\'<div class="status-item"><div class="dot grey" id="dot-client"></div><div><div class="label">Client</div><div class="sublabel">Daten-Sender (aktiv wenn LOTRO laeuft)</div></div></div>\' +\n' +
@@ -341,6 +349,7 @@ let clientProcess = null;
 let checkInterval = null;
 var prevLotroRunning = false;
 var remindOnNextStart = false;
+var lastStatusServerSpawn = 0; // Watchdog-Cooldown: max 1x pro Minute spawnen
 
 function formatLocalTime(d) {
     var pad = function(n, w) { return String(n).padStart(w || 2, '0'); };
@@ -477,6 +486,8 @@ function downloadRaw(rawUrl, destPath, cb) {
 // und gleicht diese mit der Datenbank ab. Fehlende Tode (z.B. Client nicht gestartet)
 // werden still nachgetragen (processed=1, kein Overlay).
 
+// SYNC: getLotroPath ist 4x implementiert (client.js, updater.js, Watcher-Template, Status-Server-Template).
+// Bei Aenderungen ALLE 4 Stellen synchron halten!
 function getLotroPath() {
     var lotroDir = 'The Lord of the Rings Online';
     if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
@@ -1108,6 +1119,47 @@ function checkLOTRO() {
         } else if (!lotroRunning && clientRunning) {
             stopClient();
         }
+
+        // T3-C: Status-Server-Watchdog – prueft ob Status-Server noch lebt, spawnt ihn neu bei Bedarf
+        // (max 1x pro Minute, um Spawn-Schleifen bei dauerhaftem Fehler zu vermeiden)
+        var statusServerPidFile = path.join(__dirname, 'status-server.pid');
+        var isStatusServerAlive = false;
+        if (fs.existsSync(statusServerPidFile)) {
+            try {
+                var ssPid = parseInt(fs.readFileSync(statusServerPidFile, 'utf8').trim(), 10);
+                if (ssPid) {
+                    process.kill(ssPid, 0); // wirft ESRCH wenn Prozess tot
+                    // node.exe-Check: Schutz vor PID-Wiederverwendung durch anderen Prozess
+                    var isSsNode = false;
+                    try {
+                        if (process.platform === 'linux') {
+                            var ssTc = spawnSync('ps', ['-p', String(ssPid), '-o', 'comm='], { encoding: 'utf8' });
+                            if (ssTc.stdout && ssTc.stdout.toLowerCase().indexOf('node') !== -1) isSsNode = true;
+                        } else {
+                            var ssTc = spawnSync('tasklist', ['/FI', 'PID eq ' + ssPid, '/FO', 'CSV', '/NH'], { windowsHide: true, encoding: 'utf8' });
+                            if (ssTc.stdout && ssTc.stdout.toLowerCase().indexOf('node.exe') !== -1) isSsNode = true;
+                        }
+                    } catch (_) {}
+                    if (isSsNode) isStatusServerAlive = true;
+                }
+            } catch (_) {}
+        }
+        if (!isStatusServerAlive) {
+            var ssNow = Date.now();
+            if (ssNow - lastStatusServerSpawn > 60000) {
+                lastStatusServerSpawn = ssNow;
+                var statusServerPath = path.join(__dirname, 'lotro-status-server.js');
+                if (fs.existsSync(statusServerPath)) {
+                    log('Watchdog: Status-Server nicht erreichbar – starte neu...');
+                    var ssSrv = spawn(process.execPath, [statusServerPath], {
+                        detached: true,
+                        stdio: 'ignore',
+                        windowsHide: process.platform === 'win32'
+                    });
+                    ssSrv.unref();
+                }
+            }
+        }
     });
 }
 
@@ -1182,6 +1234,17 @@ Set WshShell = Nothing`;
     console.log('✅ VBS-Start-Script erstellt:', WATCHER_VBS);
 }
 
+// Erstelle VBS-Script zum unsichtbaren Start des Status-Servers (nur Windows)
+function createStatusServerVBSScript() {
+    if (IS_LINUX) return;
+    const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run """${process.execPath.replace(/\\/g, '\\\\')}"" ""${STATUS_SERVER_JS.replace(/\\/g, '\\\\')}"" ", 0, False
+Set WshShell = Nothing`;
+
+    fs.writeFileSync(STATUS_SERVER_VBS, vbsContent, 'utf8');
+    console.log('✅ VBS-Start-Script (Status-Server) erstellt:', STATUS_SERVER_VBS);
+}
+
 // Installiere XDG Autostart (Linux)
 function installLinux() {
     try {
@@ -1196,6 +1259,12 @@ function installLinux() {
         const desktopContent = '[Desktop Entry]\nType=Application\nName=LOTRO Death Tracker\nExec="' + process.execPath + '" "' + WATCHER_JS + '"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n';
         fs.writeFileSync(SHORTCUT_PATH, desktopContent, 'utf8');
         console.log('XDG Autostart erstellt: ' + SHORTCUT_PATH);
+
+        // T3-B: Zweiter Autostart-Eintrag fuer Status-Server
+        createStatusServerScript();
+        const ssDesktopContent = '[Desktop Entry]\nType=Application\nName=LOTRO Death Tracker Status\nExec="' + process.execPath + '" "' + STATUS_SERVER_JS + '"\nHidden=false\nNoDisplay=false\nX-GNOME-Autostart-enabled=true\n';
+        fs.writeFileSync(STATUS_SHORTCUT_PATH, ssDesktopContent, 'utf8');
+        console.log('XDG Autostart (Status-Server) erstellt: ' + STATUS_SHORTCUT_PATH);
         console.log('');
 
         const pidFilePath = path.join(__dirname, 'watcher.pid');
@@ -1272,10 +1341,14 @@ function install() {
         console.log('');
         console.log('Kopiere in Startup-Ordner...');
         
-        // Kopiere VBS in Startup-Ordner
+        // Kopiere Watcher-VBS in Startup-Ordner
         fs.copyFileSync(WATCHER_VBS, SHORTCUT_PATH);
-        
-        console.log('✅ VBS kopiert nach:', SHORTCUT_PATH);
+        console.log('✅ VBS (Watcher) kopiert nach:', SHORTCUT_PATH);
+
+        // T3-B: Status-Server-VBS erstellen und in Startup-Ordner kopieren
+        createStatusServerVBSScript();
+        fs.copyFileSync(STATUS_SERVER_VBS, STATUS_SHORTCUT_PATH);
+        console.log('✅ VBS (Status-Server) kopiert nach:', STATUS_SHORTCUT_PATH);
         console.log('');
         
         console.log('═════════════════════════════════════════════════');
@@ -1377,9 +1450,14 @@ function uninstallLinux() {
     console.log('LOTRO Death Tracker - Autostart entfernen (Linux)');
     if (fs.existsSync(SHORTCUT_PATH)) {
         fs.unlinkSync(SHORTCUT_PATH);
-        console.log('XDG Autostart entfernt: ' + SHORTCUT_PATH);
+        console.log('XDG Autostart (Watcher) entfernt: ' + SHORTCUT_PATH);
     } else {
-        console.log('XDG Autostart nicht gefunden.');
+        console.log('XDG Autostart (Watcher) nicht gefunden.');
+    }
+    // T3-B: Status-Server XDG-Eintrag entfernen
+    if (fs.existsSync(STATUS_SHORTCUT_PATH)) {
+        fs.unlinkSync(STATUS_SHORTCUT_PATH);
+        console.log('XDG Autostart (Status-Server) entfernt: ' + STATUS_SHORTCUT_PATH);
     }
     if (fs.existsSync(WATCHER_JS)) {
         fs.unlinkSync(WATCHER_JS);
@@ -1397,20 +1475,31 @@ function uninstall() {
         console.log('═════════════════════════════════════════════════');
         console.log('');
         
-        // Lösche aus Startup-Ordner
+        // Lösche aus Startup-Ordner (Watcher)
         if (fs.existsSync(SHORTCUT_PATH)) {
             fs.unlinkSync(SHORTCUT_PATH);
-            console.log('✅ Aus Startup-Ordner entfernt');
+            console.log('✅ Watcher-Autostart aus Startup-Ordner entfernt');
         } else {
-            console.log('ℹ️  Nicht im Startup-Ordner gefunden');
+            console.log('ℹ️  Watcher-Autostart nicht im Startup-Ordner gefunden');
         }
-        
+
+        // T3-B: Lösche Status-Server-Autostart aus Startup-Ordner
+        if (fs.existsSync(STATUS_SHORTCUT_PATH)) {
+            fs.unlinkSync(STATUS_SHORTCUT_PATH);
+            console.log('✅ Status-Server-Autostart aus Startup-Ordner entfernt');
+        }
+
         // Lösche lokale Scripts
         if (fs.existsSync(WATCHER_VBS)) {
             fs.unlinkSync(WATCHER_VBS);
-            console.log('✅ VBS-Script gelöscht');
+            console.log('✅ VBS-Script (Watcher) gelöscht');
         }
-        
+
+        if (fs.existsSync(STATUS_SERVER_VBS)) {
+            fs.unlinkSync(STATUS_SERVER_VBS);
+            console.log('✅ VBS-Script (Status-Server) gelöscht');
+        }
+
         if (fs.existsSync(WATCHER_JS)) {
             fs.unlinkSync(WATCHER_JS);
             console.log('✅ Watcher-Script gelöscht');

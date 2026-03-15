@@ -1,7 +1,7 @@
-// LOTRO Death & Level Tracker - Client Component v2.7
+// LOTRO Death & Level Tracker - Client Component v3.0
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 2.7
+// Version: 3.0
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,7 +13,7 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '2.7',
+    version: '3.0',
     autoRestart: false,
     logFile: path.join(__dirname, 'client.log')
 };
@@ -24,9 +24,12 @@ try { require('fs').writeFileSync(CLIENT_PID_FILE, String(process.pid)); } catch
 
 // State
 let lastProcessedTimestamp = 0;
+let lastProcessedContent = '';  // Inhalts-Deduplizierung: verhindert Event-Verlust bei gleichem Timestamp
 const watchedFiles = new Set();
 
 // Get LOTRO installation path
+// SYNC: getLOTROPath ist 4x implementiert (client.js, updater.js, Watcher-Template, Status-Server-Template).
+// Bei Aenderungen ALLE 4 Stellen synchron halten!
 function getLOTROPath() {
     if (process.env.LOTRO_PATH) {
         return process.env.LOTRO_PATH;
@@ -253,8 +256,16 @@ async function processSyncFile(filePath) {
             return;
         }
         
-        // Check if this is a new event
-        if (syncData.lastUpdate && syncData.lastUpdate > lastProcessedTimestamp) {
+        // Prüfe ob das Event neu ist.
+        // Wichtig: Zwei aufeinanderfolgende Events (z.B. Tod + Level-Up) können denselben
+        // Timestamp von Turbine.Engine.GetGameTime() erhalten (gleicher Spiel-Tick).
+        // Deshalb zusätzlich den Inhalt vergleichen: gleicher Timestamp + anderer Inhalt → verarbeiten.
+        const isNewerTimestamp = syncData.lastUpdate && syncData.lastUpdate > lastProcessedTimestamp;
+        const isSameTimestampNewContent = syncData.lastUpdate && syncData.lastUpdate === lastProcessedTimestamp && syncData.content !== lastProcessedContent;
+        if (isNewerTimestamp || isSameTimestampNewContent) {
+            if (isSameTimestampNewContent) {
+                log(`Same timestamp but new content — processing anyway (same-tick event)`, 'info');
+            }
             const eventType = syncData.eventType || 'unknown';
             log(`New ${eventType} event detected!`, 'success');
             
@@ -291,16 +302,21 @@ async function processSyncFile(filePath) {
             eventData.datetime = `${eventData.date} ${eventData.time}`;
             eventData.timestamp = Math.floor(now.getTime() / 1000);
             
-            log(`Character: ${eventData.characterName}, Level: ${eventData.level}, Type: ${eventData.eventType}`, 'info');
-            
+            if (eventData.eventType === 'levelup') {
+                log(`Level-Up: ${eventData.characterName} erreicht Level ${eventData.level}`, 'info');
+            } else {
+                log(`Character: ${eventData.characterName}, Level: ${eventData.level}, Type: ${eventData.eventType}`, 'info');
+            }
+
             // Send to server
             const success = await sendEventToServer(eventData);
             
             if (success) {
                 lastProcessedTimestamp = syncData.lastUpdate;
+                lastProcessedContent = syncData.content || '';
             }
         } else {
-            log(`Event already processed (timestamp: ${syncData.lastUpdate})`, 'info');
+            log(`Event already processed (timestamp: ${syncData.lastUpdate}, content unchanged)`, 'info');
         }
     } catch (error) {
         log(`Error processing sync file: ${error.message}`, 'error');

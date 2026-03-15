@@ -215,6 +215,22 @@
         let isDisplaying = false;
         let isChecking = false;
 
+        // ============================================
+        // STATE MANAGEMENT
+        // ============================================
+
+        /**
+         * Erzwingt einen vollständigen State-Reset.
+         * Wird von Watchdog, visibilitychange und globalen Error-Handlern aufgerufen.
+         */
+        function resetState() {
+            isDisplaying = false;
+            isChecking = false;
+            currentDeath = null;
+            const overlay = document.getElementById('deathOverlay');
+            if (overlay) overlay.classList.remove('show');
+        }
+
         // Set of character names that are in the streamer mapping table.
         // Deaths from characters NOT in this set are silently skipped.
         // Empty set = mapping not yet loaded = no filter applied (fail-open).
@@ -295,11 +311,22 @@
 
             console.log(`[DISPLAY] Showing death #${death.deathCount} for ${death.characterName} (Level ${death.level})`);
 
+            // Safety-Watchdog: Falls der normale setTimeout durch Tab-Suspend oder andere
+            // Browser-Einschränkungen nicht feuert, erzwingen wir nach DISPLAY_DURATION + 3s
+            // einen State-Reset, damit das Overlay nicht permanent hängen bleibt.
+            const safetyTimeout = setTimeout(() => {
+                if (isDisplaying) {
+                    console.warn('[WATCHDOG] Safety-Timer ausgelöst – isDisplaying hängt. State-Reset wird erzwungen.');
+                    resetState();
+                }
+            }, CONFIG.DISPLAY_DURATION + 3000);
+
             // Hide after duration, then advance the queue
             setTimeout(() => {
                 overlay.classList.remove('show');
 
                 setTimeout(() => {
+                    clearTimeout(safetyTimeout); // Normaler Ablauf – Safety-Watchdog abbrechen
                     isDisplaying = false;
                     advanceQueue(death.id);
                 }, 600); // Wait for fade-out animation
@@ -420,6 +447,33 @@
             setInterval(checkForDeaths, CONFIG.CHECK_INTERVAL);
             checkForDeaths(); // Check immediately on load
         }
+
+        // ============================================
+        // RESILIENCE: VISIBILITY + GLOBAL ERROR HANDLING
+        // ============================================
+
+        // OBS und StreamElements können Browser-Tabs suspendieren (z.B. wenn die
+        // Browser-Quelle nicht sichtbar ist). Beim Wechsel zurück auf 'visible' kann
+        // State inkonsistent sein – daher vollständiger Reset + sofortiger Neucheck.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('[VISIBILITY] Tab wieder sichtbar – State wird zurückgesetzt und Polling neu gestartet.');
+                resetState();
+                checkForDeaths();
+            }
+        });
+
+        // Globaler Fallback: Bei unbehandelten JS-Fehlern oder Promise-Ablehnungen State
+        // zurücksetzen, damit das Overlay nicht dauerhaft blockiert wird.
+        window.addEventListener('error', (event) => {
+            console.error('[ERROR] Unbehandelter Fehler – State-Reset:', event.message, event.error);
+            resetState();
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('[ERROR] Unbehandelte Promise-Ablehnung – State-Reset:', event.reason);
+            resetState();
+        });
 
         window.addEventListener('load', init);
     </script>

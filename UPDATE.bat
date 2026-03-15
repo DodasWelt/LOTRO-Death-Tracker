@@ -1,5 +1,5 @@
 @echo off
-title LOTRO Death Tracker - Update auf v2.7
+title LOTRO Death Tracker - Update auf v3.0
 
 REM Wechsle in das Verzeichnis wo die BAT-Datei liegt
 cd /d "%~dp0"
@@ -14,7 +14,7 @@ echo [%DATE% %TIME%] Verzeichnis: %~dp0 >> "%UPDATE_LOG%"
 echo.
 echo ================================================================
 echo.
-echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 2.7
+echo         LOTRO DEATH TRACKER - UPDATE AUF VERSION 3.0
 echo.
 echo ================================================================
 echo.
@@ -135,6 +135,24 @@ if %errorLevel% neq 0 (
     echo [FEHLER] version.json konnte nicht kopiert werden!
     pause
     exit /b 1
+)
+
+REM --- UNINSTALL.bat + REINSTALL.bat ins Installationsverzeichnis kopieren ---
+if exist "%~dp0UNINSTALL.bat" (
+    copy /Y "%~dp0UNINSTALL.bat" "%CLIENT_PATH%\UNINSTALL.bat" >nul
+    echo   - UNINSTALL.bat kopiert
+    echo [%DATE% %TIME%] Schritt 2: UNINSTALL.bat kopiert >> "%UPDATE_LOG%"
+) else (
+    echo [WARNUNG] UNINSTALL.bat nicht gefunden - wird nicht kopiert
+    echo [%DATE% %TIME%] WARNUNG: UNINSTALL.bat nicht gefunden >> "%UPDATE_LOG%"
+)
+if exist "%~dp0REINSTALL.bat" (
+    copy /Y "%~dp0REINSTALL.bat" "%CLIENT_PATH%\REINSTALL.bat" >nul
+    echo   - REINSTALL.bat kopiert
+    echo [%DATE% %TIME%] Schritt 2: REINSTALL.bat kopiert >> "%UPDATE_LOG%"
+) else (
+    echo [WARNUNG] REINSTALL.bat nicht gefunden - wird nicht kopiert
+    echo [%DATE% %TIME%] WARNUNG: REINSTALL.bat nicht gefunden >> "%UPDATE_LOG%"
 )
 echo OK - Client-Dateien aktualisiert
 echo [%DATE% %TIME%] Schritt 2 OK >> "%UPDATE_LOG%"
@@ -335,7 +353,7 @@ echo ================================================================
 echo.
 echo                    UPDATE ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.7
+echo                  Installierte Version: 3.0
 echo.
 echo ================================================================
 echo.
@@ -355,7 +373,7 @@ echo ================================================================
 echo.
 
 REM Zeige Erfolgs-Popup - sichtbar auch wenn das CMD-Fenster sich schliesst
-echo MsgBox "LOTRO Death Tracker v2.7 aktualisiert! Watcher laeuft im Hintergrund. Windows-Neustart ist NICHT noetig.", 64, "Update fertig!" > "%TEMP%\_lotro_update_done.vbs"
+echo MsgBox "LOTRO Death Tracker v3.0 aktualisiert! Watcher laeuft im Hintergrund. Windows-Neustart ist NICHT noetig.", 64, "Update fertig!" > "%TEMP%\_lotro_update_done.vbs"
 cscript //nologo "%TEMP%\_lotro_update_done.vbs"
 del "%TEMP%\_lotro_update_done.vbs" >nul 2>&1
 echo [%DATE% %TIME%] UPDATE abgeschlossen (Popup bestaetigt) >> "%UPDATE_LOG%"

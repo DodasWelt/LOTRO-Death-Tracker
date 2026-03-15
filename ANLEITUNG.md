@@ -1,6 +1,6 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung
 
-**Version 2.7** | Stand: März 2026
+**Version 3.0** | Stand: März 2026
 
 ---
 
@@ -20,7 +20,7 @@ Du stirbst im Spiel → Plugin erkennt es → Client sendet Daten → Overlay ze
 
 Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt passiert beim Doppelklick auf die BAT-Datei gar nichts.
 
-1. **Rechtsklick** auf `LOTRO-Death-Tracker-v2.7.zip` → **Eigenschaften**
+1. **Rechtsklick** auf `LOTRO-Death-Tracker-v3.0.zip` → **Eigenschaften**
 2. Haken bei **„Zulassen"** setzen → **Übernehmen** → **OK**
 3. ZIP danach entpacken
 
@@ -29,7 +29,7 @@ Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt pass
 1. **Rechtsklick** auf `INSTALL.bat` → **Eigenschaften** → Haken bei **„Zulassen"** → **OK**
 2. **Rechtsklick** auf `INSTALL.bat` → **Als Administrator ausführen**
 
-Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v2.7 erfolgreich installiert!"**
+Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v3.0 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Der Installer erkennt das und öffnet die Download-Seite automatisch. Nach der Node.js-Installation den PC neu starten und `INSTALL.bat` erneut ausführen.
 
@@ -58,8 +58,8 @@ Der Client läuft ab sofort unsichtbar im Hintergrund und startet automatisch mi
 ### Schritt 1: ZIP entpacken
 
 ```bash
-unzip LOTRO-Death-Tracker-v2.7.zip
-cd LOTRO-Death-Tracker-v2.7
+unzip LOTRO-Death-Tracker-v3.0.zip
+cd LOTRO-Death-Tracker-v3.0
 ```
 
 ### Schritt 2: INSTALL.sh ausführen
@@ -74,7 +74,7 @@ Der Installer findet deinen LOTRO-Pfad automatisch (Steam native, Steam Flatpak,
 LOTRO_PATH="/pfad/zu/LOTRO" bash INSTALL.sh
 ```
 
-Am Ende erscheint die Meldung: **„LOTRO Death Tracker v2.7 erfolgreich installiert!"**
+Am Ende erscheint die Meldung: **„LOTRO Death Tracker v3.0 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Den Paketmanager der Distribution verwenden, z.B. `sudo apt install nodejs npm` (Ubuntu/Debian) oder `sudo pacman -S nodejs npm` (Arch).
 
@@ -95,6 +95,53 @@ Neue Browserquelle in OBS hinzufügen:
 ### Schritt 5: Fertig!
 
 Der Client läuft im Hintergrund und startet automatisch mit dem Desktop (XDG Autostart). Deaths und Level-Ups werden ab jetzt automatisch erkannt.
+
+---
+
+## 🗑️ Deinstallation
+
+### Windows
+
+Im Installationsverzeichnis (`C:\LOTRO-Death-Tracker\`) liegt `UNINSTALL.bat`.
+
+1. **Rechtsklick** auf `UNINSTALL.bat` → **Als Administrator ausführen**
+2. Bestätigung mit **J** eingeben
+3. Der Deinstaller stoppt alle laufenden Prozesse, entfernt die Autostart-Einträge, löscht das LOTRO-Plugin und das gesamte Installationsverzeichnis.
+
+Am Ende erscheint ein Popup: **„Deinstallation abgeschlossen."**
+
+> Das Skript löscht sich nach Abschluss automatisch selbst.
+
+### Linux
+
+Im Installationsverzeichnis (`~/.local/share/lotro-death-tracker/`) liegt `UNINSTALL.sh`.
+
+```bash
+bash ~/.local/share/lotro-death-tracker/UNINSTALL.sh
+```
+
+Der Deinstaller stoppt alle laufenden Prozesse, entfernt die Autostart-Desktop-Dateien, löscht das LOTRO-Plugin und das Installationsverzeichnis.
+
+---
+
+## 🔄 Saubere Neuinstallation
+
+Falls die Installation beschädigt ist oder du einen sauberen Neustart möchtest:
+
+### Windows
+
+1. **Rechtsklick** auf `REINSTALL.bat` (im Installationsverzeichnis oder ZIP) → **Als Administrator ausführen**
+2. Das Skript lädt die neueste Version automatisch von GitHub, deinstalliert die alte Version und führt eine Frischinstallation durch.
+
+> Kein manuelles Löschen nötig — `REINSTALL.bat` erledigt alles automatisch.
+
+### Linux
+
+```bash
+bash REINSTALL.sh
+```
+
+Das Skript lädt die neueste Version von GitHub, deinstalliert die alte Version und führt eine Frischinstallation durch.
 
 ---
 

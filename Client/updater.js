@@ -252,6 +252,8 @@ setTimeout(function() {
 
         // Schritt 4: LOTRO Plugin-Dateien aktualisieren
         (function() {
+            // SYNC: getLOTROPath ist 4x implementiert (client.js, updater.js, Watcher-Template, Status-Server-Template).
+            // Bei Aenderungen ALLE 4 Stellen synchron halten!
             function getLOTROPath() {
                 if (process.env.LOTRO_PATH) return process.env.LOTRO_PATH;
                 var LOTRO_SUBDIR = 'The Lord of the Rings Online';

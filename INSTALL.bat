@@ -61,6 +61,42 @@ exit /b 1
 :admin_ok
 echo [%DATE% %TIME%] Admin-Check OK >> "%INSTALL_LOG%"
 
+REM ── LOTRO-Running-Check ──────────────────────────────────────────────────────
+echo [%DATE% %TIME%] Pruefe ob LOTRO laeuft... >> "%INSTALL_LOG%"
+set "LOTRO_RUNNING=0"
+tasklist /FI "IMAGENAME eq lotroclient64.exe" /NH 2>nul | findstr /I "lotroclient64" >nul 2>&1
+if %errorLevel% equ 0 set "LOTRO_RUNNING=1"
+if "%LOTRO_RUNNING%"=="0" (
+    tasklist /FI "IMAGENAME eq lotroclient.exe" /NH 2>nul | findstr /I "lotroclient.exe" >nul 2>&1
+    if %errorLevel% equ 0 set "LOTRO_RUNNING=1"
+)
+if "%LOTRO_RUNNING%"=="1" goto :install_lotro_running_dialog
+goto :install_node_check
+
+:install_lotro_running_dialog
+echo [%DATE% %TIME%] LOTRO laeuft - zeige Dialog >> "%INSTALL_LOG%"
+(
+echo Dim rc
+echo rc = MsgBox^("LOTRO laeuft noch." ^& Chr^(13^) ^& Chr^(10^) ^& "Soll LOTRO jetzt beendet werden?", 36, "LOTRO Death Tracker - Installation"^)
+echo WScript.Quit rc
+) > "%TEMP%\_lotro_install_dlg.vbs"
+cscript //nologo "%TEMP%\_lotro_install_dlg.vbs"
+set "DLG_RC=%errorLevel%"
+del "%TEMP%\_lotro_install_dlg.vbs" >nul 2>&1
+echo [%DATE% %TIME%] LOTRO-Dialog Rueckgabe: %DLG_RC% >> "%INSTALL_LOG%"
+if "%DLG_RC%"=="6" goto :install_kill_lotro
+echo [%DATE% %TIME%] Installation abgebrochen (LOTRO laeuft) >> "%INSTALL_LOG%"
+echo Installation abgebrochen.
+pause
+exit /b 1
+
+:install_kill_lotro
+taskkill /F /IM lotroclient64.exe >nul 2>&1
+taskkill /F /IM lotroclient.exe >nul 2>&1
+echo [%DATE% %TIME%] LOTRO beendet >> "%INSTALL_LOG%"
+
+:install_node_check
+
 REM --- Node.js-Pfad ermitteln (auch im Admin-Kontext zuverlaessig) ---
 REM npm wird immer direkt aus dem Verzeichnis von node.exe abgeleitet,
 REM nicht aus PATH - verhindert Konflikt mit lokalem npm in node_modules\.bin
@@ -263,6 +299,24 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
+REM --- UNINSTALL.bat + REINSTALL.bat ins Installationsverzeichnis kopieren ---
+if exist "%~dp0UNINSTALL.bat" (
+    copy /Y "%~dp0UNINSTALL.bat" "%CLIENT_PATH%\UNINSTALL.bat" >nul
+    echo   - UNINSTALL.bat kopiert
+    echo [%DATE% %TIME%] Schritt 4: UNINSTALL.bat kopiert >> "%INSTALL_LOG%"
+) else (
+    echo [WARNUNG] UNINSTALL.bat nicht gefunden - wird nicht kopiert
+    echo [%DATE% %TIME%] WARNUNG: UNINSTALL.bat nicht gefunden >> "%INSTALL_LOG%"
+)
+if exist "%~dp0REINSTALL.bat" (
+    copy /Y "%~dp0REINSTALL.bat" "%CLIENT_PATH%\REINSTALL.bat" >nul
+    echo   - REINSTALL.bat kopiert
+    echo [%DATE% %TIME%] Schritt 4: REINSTALL.bat kopiert >> "%INSTALL_LOG%"
+) else (
+    echo [WARNUNG] REINSTALL.bat nicht gefunden - wird nicht kopiert
+    echo [%DATE% %TIME%] WARNUNG: REINSTALL.bat nicht gefunden >> "%INSTALL_LOG%"
+)
+
 echo [%DATE% %TIME%] Schritt 4: npm install (NODE_CMD=%NODE_CMD%) >> "%INSTALL_LOG%"
 cd /d "%CLIENT_PATH%"
 echo   - Installiere Node.js Pakete (kann 1-2 Minuten dauern)...
@@ -316,7 +370,7 @@ echo ================================================================
 echo.
 echo                  INSTALLATION ERFOLGREICH!
 echo.
-echo                  Installierte Version: 2.7
+echo                  Installierte Version: 3.0
 echo.
 echo ================================================================
 echo.
@@ -337,7 +391,7 @@ echo ================================================================
 echo.
 
 REM Zeige Erfolgs-Popup - sichtbar auch wenn das CMD-Fenster sich schliesst
-echo MsgBox "LOTRO Death Tracker v2.7 erfolgreich installiert! Watcher laeuft im Hintergrund.", 64, "Installation fertig!" > "%TEMP%\_lotro_install_done.vbs"
+echo MsgBox "LOTRO Death Tracker v3.0 erfolgreich installiert! Watcher laeuft im Hintergrund.", 64, "Installation fertig!" > "%TEMP%\_lotro_install_done.vbs"
 cscript //nologo "%TEMP%\_lotro_install_done.vbs"
 del "%TEMP%\_lotro_install_done.vbs" >nul 2>&1
 echo [%DATE% %TIME%] INSTALLATION abgeschlossen (Popup bestaetigt) >> "%INSTALL_LOG%"

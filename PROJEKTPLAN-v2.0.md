@@ -1098,6 +1098,62 @@ Der bestehende `checkAndApplyUpdate()` beim Watcher-Start läuft weiterhin — w
 
 ---
 
+## Thema 20 — SysTray → OBS-Dock Status-Server (v2.7)
+
+**Ziel:** Stabiler Ersatz für das fehleranfällige SysTray-Feature. Lokaler HTTP-Server auf Port 7890 zeigt Status im OBS Browser-Dock.
+
+**Status: ✅ implementiert in v2.7** — Vollständige Dokumentation in CLAUDE.md (OBS Browser-Dock Status-Seite).
+
+---
+
+## Thema 21 — Code-Review + Level-Sync Bug Fix (v3.0)
+
+**Ziel:** Vollständige Prüfung aller Kerndateien gegenüber v2.0-Baseline. Behebung des Level-Sync Bugs (Level in DB wird nach Level-Up nicht aktualisiert).
+
+**Status: 🔧 in Arbeit** — Siehe `.ralph/fix_plan.md` T1 + T2.
+
+---
+
+## Thema 22 — Status-Server Stabilität (v3.0)
+
+**Ziel:** Status-Server läuft zuverlässig nach OS-Neustart und erholt sich von Abstürzen.
+
+**Problem:** (1) Stale PID nach OS-Shutdown blockiert Neustart. (2) Nur Watcher hat Autostart-Eintrag, nicht Status-Server. (3) Kein Watchdog bei Absturz.
+
+**Lösung:** Zwei Autostart-Einträge (Watcher + Status-Server), node.exe-Check im Singleton-Lock, Watcher-Watchdog.
+
+**Status: 🔧 in Arbeit** — Siehe `.ralph/fix_plan.md` T3.
+
+---
+
+## Thema 23 — UNINSTALL-Skripte (v3.0)
+
+**Ziel:** `UNINSTALL.bat` (Windows) und `UNINSTALL.sh` (Linux) für vollständige Clean-Deinstallation.
+
+**Inhalt:** Alle node.exe beenden, Autostart entfernen, LOTRO-Plugin löschen, Installationsverzeichnis löschen. Self-Copy-Pattern nötig (Skript liegt im zu löschenden Verzeichnis).
+
+**Status: 🔧 in Arbeit** — Siehe `.ralph/fix_plan.md` T4.
+
+---
+
+## Thema 24 — REINSTALL-Skripte (v3.0)
+
+**Ziel:** `REINSTALL.bat` (Windows) und `REINSTALL.sh` (Linux) für saubere Neuinstallation direkt von GitHub.
+
+**Inhalt:** GitHub-Release-ZIP laden, entpacken, Deinstallation, saubere Neuinstallation. Staging-Pattern: Download vor allen destructiven Aktionen; Abbruch bei Download-Fehler.
+
+**Status: 🔧 in Arbeit** — Siehe `.ralph/fix_plan.md` T5.
+
+---
+
+## Thema 25 — LOTRO-Running-Check in INSTALL (v3.0)
+
+**Ziel:** `INSTALL.bat` und `INSTALL.sh` prüfen vor Installation ob LOTRO läuft und fragen den Nutzer, ob es geschlossen werden soll (gleiche Logik wie `UPDATE.bat`).
+
+**Status: 🔧 in Arbeit** — Siehe `.ralph/fix_plan.md` T6.
+
+---
+
 ## Thema 19 — watcher.log Lokalzeit statt UTC
 
 **Ziel:** Alle Zeitstempel im `watcher.log` zeigen die lokale Systemzeit des Nutzers statt UTC.
@@ -1146,13 +1202,19 @@ Diese Funktion ersetzt `new Date().toISOString()` in der `log()`-Funktion des ge
 | 9 | Risikominimierung vor Release | 2.1 | **Mittel** | ✅ implementiert |
 | 10 | Test-Umgebung (Staging) | 2.2 | **Mittel** | ✅ implementiert |
 | 11 | Watcher Singleton-Lock | 2.3 | **Klein** | ✅ implementiert |
-| 12 | Plugin-Dateien im Auto-Update | 2.4 | **Klein** | ⏳ geplant |
-| 13 | Client-Crash-Restart via Watcher | 2.4 | **Klein** | ⏳ geplant |
-| 14 | Staging Rename-Backup | 2.4 | **Klein** | ⏳ geplant |
-| 15 | Versionsstrings & WP-Plugin User-Agent | 2.4 | **Minimal** | ⏳ geplant |
-| 16 | Overlay isChecking-Flag | 2.4 | **Minimal** | ⏳ geplant |
-| 17 | Lokales Tod-Tracking & stiller DB-Abgleich | 2.4 | **Mittel** | ⏳ geplant |
-| 18 | Periodischer Update-Check (In-Game) | 2.4 | **Mittel** | ⏳ geplant |
-| 19 | watcher.log Lokalzeit | 2.4 | **Minimal** | ⏳ geplant |
+| 12 | Plugin-Dateien im Auto-Update | 2.4 | **Klein** | ✅ implementiert |
+| 13 | Client-Crash-Restart via Watcher | 2.4 | **Klein** | ✅ implementiert |
+| 14 | Staging Rename-Backup | 2.4 | **Klein** | ✅ implementiert |
+| 15 | Versionsstrings & WP-Plugin User-Agent | 2.4 | **Minimal** | ✅ implementiert |
+| 16 | Overlay isChecking-Flag | 2.4 | **Minimal** | ✅ implementiert |
+| 17 | Lokales Tod-Tracking & stiller DB-Abgleich | 2.4 | **Mittel** | ✅ implementiert |
+| 18 | Periodischer Update-Check (In-Game) | 2.4 | **Mittel** | ✅ implementiert |
+| 19 | watcher.log Lokalzeit | 2.4 | **Minimal** | ✅ implementiert |
+| 20 | SysTray → OBS-Dock Status-Server | 2.7 | **Groß** | ✅ implementiert |
+| 21 | Code-Review + Level-Sync Bug Fix | 3.0 | **Mittel** | 🔧 in Arbeit |
+| 22 | Status-Server Stabilität (Dual-Autostart + Watchdog) | 3.0 | **Mittel** | 🔧 in Arbeit |
+| 23 | UNINSTALL.bat / UNINSTALL.sh | 3.0 | **Mittel** | 🔧 in Arbeit |
+| 24 | REINSTALL.bat / REINSTALL.sh | 3.0 | **Groß** | 🔧 in Arbeit |
+| 25 | LOTRO-Running-Check in INSTALL | 3.0 | **Klein** | 🔧 in Arbeit |
 
-**Aktueller Stand: v2.3 released (2026-03-03). Themen 12–19 sind für v2.4 geplant.**
+**Aktueller Stand: v2.7 released (2026-03-13). v3.0 in Entwicklung — Tasks in `.ralph/fix_plan.md`.**

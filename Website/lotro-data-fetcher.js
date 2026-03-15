@@ -1,6 +1,6 @@
 /**
  * LOTRO Death Tracker - Data Fetcher
- * Version: 2.7
+ * Version: 3.0
  *
  * Einfache JavaScript-Bibliothek zum Abrufen von LOTRO Character Death Daten
  * für die Integration in beliebige Webseiten.
@@ -8,7 +8,7 @@
  * VERWENDUNG:
  * -----------
  * 1. Dieses Skript in die Website einbinden (jsDelivr CDN):
- *    <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.7/Website/lotro-data-fetcher.js"></script>
+ *    <script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v3.0/Website/lotro-data-fetcher.js"></script>
  *
  * 2. Daten abrufen und verwenden:
  *    LOTROData.getLatestDeath().then(data => {

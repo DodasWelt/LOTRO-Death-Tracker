@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Weiterführende Dokumentation
+
+| Bereich | Datei |
+|---|---|
+| Node.js Client, Installer, Autostart, Auto-Update, Linux | `Client/CLAUDE.md` |
+| WordPress REST API, DB-Struktur, Test-Umgebung | `WordPress/CLAUDE.md` |
+| Stream-Overlay, lotro-data-fetcher.js | `Overlay/CLAUDE.md` |
+
+---
+
 ## Project Overview
 
 LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the Rings Online Stream-Overlays. Ab v2.0 über GitHub Releases verteilt.
@@ -9,7 +19,7 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 **Autor:** DodasWelt / Herrin Inge | **Website:** https://www.dodaswelt.de | **GitHub:** https://github.com/DodasWelt/LOTRO-Death-Tracker
 
 > **Hinweis:** `LOTRO-Death-Tracker-COMPLETE-SUMMARY.md` enthält veraltete Code-Snippets (ältere Architektur). Die maßgeblichen Quellen sind die tatsächlichen Dateien im Repository.
-> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung mit Aufwand/Status aller Themen. `RISIKOANALYSE-v2.0.md` — v2.1-Analyse + v1.5→v2.1-Verteilungsrisiken. `RISIKOANALYSE-v2.3.md` — v2.3-Analyse + Auto-Update v2.0→v2.3-Risiken. `RISIKOANALYSE-v2.4.md` — v2.4-Analyse + implementierte Mitigationen. `RISIKOANALYSE-v2.6.md` — v2.6-Analyse + Sys-Tray-Risiken + syncLocalDeaths-Korrekturen. `RISIKOANALYSE-v2.7.md` — v2.7-Analyse + OBS-Dock Status-Server-Risiken.
+> **Schlüsseldokumente:** `PROJEKTPLAN-v2.0.md` — Feature-Planung. `RISIKOANALYSE-v2.7.md` — aktuellste Risikoanalyse.
 
 ### Repository-Struktur
 
@@ -21,10 +31,10 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay (Prod) | StreamElements Custom Widget |
 | `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
-| `INSTALL.bat` | Erstinstallation für Streamer (Windows) | Im Distributions-ZIP |
-| `UPDATE.bat` | Upgrade für bestehende Nutzer (Windows) | Im Distributions-ZIP |
-| `INSTALL.sh` | Erstinstallation für Streamer (Linux) | Im Distributions-ZIP |
-| `UPDATE.sh` | Upgrade für bestehende Nutzer (Linux) | Im Distributions-ZIP |
+| `INSTALL.bat` / `INSTALL.sh` | Erstinstallation (Windows / Linux) | Im Distributions-ZIP |
+| `UPDATE.bat` / `UPDATE.sh` | Upgrade für bestehende Nutzer | Im Distributions-ZIP |
+| `UNINSTALL.bat` / `UNINSTALL.sh` | Vollständige Deinstallation | Im Distributions-ZIP + Installationsverzeichnis |
+| `REINSTALL.bat` / `REINSTALL.sh` | Saubere Neuinstallation via GitHub | Im Distributions-ZIP + Installationsverzeichnis |
 
 ---
 
@@ -36,11 +46,8 @@ cd C:\LOTRO-Death-Tracker
 npm install
 
 # Client manuell starten (zum Testen)
-npm start
-# oder: node client.js
-
-# Env-Overrides für Tests:
-# SERVER_URL=https://... LOTRO_PATH=C:\... node client.js
+npm start   # oder: node client.js
+# Env-Overrides: SERVER_URL=https://... LOTRO_PATH=C:\... node client.js
 
 # Autostart verwalten
 npm run install-service    # In Windows Startup-Ordner installieren
@@ -52,7 +59,7 @@ npm run test-service       # Watcher sichtbar im Vordergrund testen
 Get-Content C:\LOTRO-Death-Tracker\client.log -Wait -Tail 20
 Get-Content C:\LOTRO-Death-Tracker\watcher.log -Wait -Tail 20
 
-# API manuell testen (PowerShell)
+# API manuell testen
 Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/health" -Method GET
 
 # Plugin im Spiel laden
@@ -91,141 +98,18 @@ LOTRO (Spiel)
 - `LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua` — Haupt-Logik (event-driven via MoraleChanged/LevelChanged)
 - Installationspfad: `C:\Users\[USER]\Documents\The Lord of the Rings Online\Plugins\DodasWelt\`
 
-**Node.js Client**:
-- `Client/client.js` — File-Watcher & API-Sender
-- `Client/install-autostart.js` — Generiert `lotro-watcher.js` + `start-lotro-watcher.vbs` dynamisch, kopiert VBS in Startup-Ordner
-- `Client/updater.js` — Wird vom Watcher nach erkanntem Update gespawnt; prüft zunächst ob LOTRO läuft (VBScript-Dialog bei Bedarf), wartet 1s, prüft dann per `waitForFile()` ob `install-autostart.js` lesbar ist (max 10s), führt `npm install` + `install-autostart.js install` aus, schreibt `version.json`, löscht sich selbst
-- `Client/version.json.template` — Template für installierte Version (wird bei Installation zu `version.json` kopiert)
-- `Client/package.json`
-- Installationspfad: `C:\LOTRO-Death-Tracker\`
-- Logs: `C:\LOTRO-Death-Tracker\client.log`, `C:\LOTRO-Death-Tracker\watcher.log`
+**Node.js Client** (`C:\LOTRO-Death-Tracker\`):
+- `Client/client.js` — File-Watcher & API-Sender; schreibt `client.pid` beim Start
+- `Client/install-autostart.js` — Generiert `lotro-watcher.js`, `lotro-status-server.js` und zwei VBS-Dateien dynamisch
+- `Client/updater.js` — Wird nach erkanntem Update gespawnt; führt `npm install` + `install-autostart.js install` aus
+- `Client/version.json.template` — Template für `version.json` (wird bei Installation kopiert)
+- Logs: `client.log`, `watcher.log`
 
-**Installer / Updater**:
-- `INSTALL.bat` — Erstinstallation: kopiert Plugin + Client, `npm install`, `install-autostart.js install`
-- `UPDATE.bat` — Upgrade von v1.5: stoppt alten Autostart, ersetzt Dateien, `npm install`, Plugin + Autostart neu
-
-### Autostart-System
-
-`install-autostart.js` generiert drei Dateien dynamisch (NICHT versioniert, zur Laufzeit erstellt):
-- `lotro-watcher.js` — Prüft alle 5 Sekunden ob `lotroclient64.exe`/`lotroclient.exe` läuft, startet/stoppt `client.js` entsprechend. Enthält außerdem `checkAndApplyUpdate()`: einmaliger GitHub-API-Aufruf beim Start, bei neuerer Version Download + Spawn von `updater.js` + Selbstbeendigung.
-- `lotro-status-server.js` — Lokaler HTTP-Server auf Port 7890. Läuft **als eigener Prozess** unabhängig vom Watcher. Zeigt Status-Seite für OBS Browser-Dock.
-- `start-lotro-watcher.vbs` — Startet den Watcher unsichtbar (kein Konsolenfenster)
-
-Die VBS-Datei wird nach `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\LOTRO-Death-Tracker.vbs` kopiert.
-
-### OBS Browser-Dock Status-Seite (ab v2.7)
-
-`lotro-status-server.js` startet als **separater Prozess** auf Port 7890 und ist unabhängig vom Watcher erreichbar.
-
-**Architektur:**
-- Läuft als eigener `node`-Prozess mit eigenem `status-server.pid` Singleton-Lock
-- Liest `watcher.pid` und `client.pid` via `process.kill(pid, 0)` — kein IPC nötig
-- `client.js` schreibt beim Start `client.pid`, löscht sie beim Beenden
-
-**Endpoints:**
-- `GET /` — HTML-Statusseite (Watcher/Client/Plugin-Dots, Restart-Button)
-- `GET /status` — JSON `{ watcher, client, plugin, lastCheck }`
-- `POST /restart` — schreibt temp VBScript/Shell-Script, spawnt es detached, beendet sich dann selbst
-
-**Restart-Flow:**
-1. POST /restart → antwortet 200 OK
-2. Temp-Script wird geschrieben (`_lotro_restart.vbs` / `_lotro_restart.sh`)
-3. Temp-Script spawnen (detached), Status-Server beendet sich nach 200ms
-4. Temp-Script wartet 2s, killt alle `node.exe`, bereinigt StreamDeck-Node-Ordner, startet `install-autostart.js install`
-5. `install-autostart.js install` startet neuen Watcher + neuen Status-Server
-
-**OBS Dock einrichten:** OBS → Docks → Benutzerdefinierte Browser-Docks → URL: `http://localhost:7890`
-
-**Plugin-Erkennung:** `isPluginActive()` prüft ob `Plugins/DodasWelt/DeathTracker.plugin` existiert (gecacht, kein Registry-Query alle 5s).
-
-### Linux-Kompatibilität (ab v2.4+)
-
-LOTRO läuft auf Linux via Steam+Proton (AppID 212500) oder Lutris. Alle Node.js-Dateien unterstützen beide Plattformen über `process.platform === 'linux'` Branches.
-
-**LOTRO-Pfad-Suchreihenfolge (Linux):**
-
-| Priorität | Pfad | Launcher |
-|---|---|---|
-| 1 | `~/.steam/steam/steamapps/compatdata/212500/pfx/drive_c/users/steamuser/My Documents/LOTRO` | Steam (native) |
-| 2 | `~/.var/app/com.valvesoftware.Steam/.../compatdata/212500/...` | Steam (Flatpak) |
-| 3 | `~/.config/lutris/games/*.yml` → `wine_prefix` + Profilpfad | Lutris |
-| 4 | `LOTRO_PATH` Env-Var | Manuell |
-
-**Plattformspezifische Ersetzungen:**
-
-| Windows | Linux |
-|---|---|
-| `tasklist /FI "IMAGENAME eq lotroclient*.exe"` | `pgrep -f lotroclient` + `pgrep -f "proton.*212500"` |
-| VBScript-Dialoge (wscript.exe) | zenity → kdialog → notify-send + Log |
-| Startup-Ordner + VBS | XDG `~/.config/autostart/lotro-death-tracker.desktop` |
-| `npm.cmd` | `npm` |
-| PowerShell `Invoke-WebRequest` | `curl -fsSL` |
-| `ps` via tasklist (PID-Check) | `ps -p <pid> -o comm=` |
-
-**Linux Autostart:** XDG Desktop Entry — funktioniert auf GNOME, KDE, XFCE, MATE und allen Distros mit XDG-Autostart-Unterstützung.
-
-**Installationspfad Linux:** `~/.local/share/lotro-death-tracker/` (XDG Data Home)
-
-**Linux-Commands:**
-```bash
-# Installation
-bash INSTALL.sh
-
-# Update
-bash UPDATE.sh
-
-# Manuell
-cd ~/.local/share/lotro-death-tracker
-npm run install-service    # XDG Autostart einrichten
-npm run uninstall-service  # XDG Autostart entfernen
-npm run status             # Status prüfen
-npm run test-service       # Watcher im Vordergrund testen
-
-# Mit manuellem LOTRO-Pfad
-LOTRO_PATH="/path/to/LOTRO" node client.js
-
-# Logs verfolgen
-tail -f ~/.local/share/lotro-death-tracker/watcher.log
-tail -f ~/.local/share/lotro-death-tracker/client.log
-```
-
-### Auto-Update-System (ab v2.0)
-
-**Watcher-Update-Ablauf:**
-```
-Watcher startet
-  → checkAndApplyUpdate(): GET api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest
-  → version.json lesen → vergleichen
-  → Kein Update: normal weiter (LOTRO-Check-Loop)
-  → Update verfügbar:
-       → HEAD-Request auf version.json.template zur URL-Vorab-Validierung
-       → Bei Fehler: Update abgebrochen, Watcher läuft weiter
-       → update-staging/ anlegen
-       → Alle 4 Dateien nach update-staging/ laden (downloadRaw, je .tmp → rename intern)
-       → Erst wenn ALLE Downloads OK: atomares renameSync in Produktion
-       → update-staging/ löschen
-       → updater.js als detached Prozess spawnen (windowsHide: true)
-       → Client-Prozess beenden (falls läuft)
-       → Watcher beendet sich
-         ↓
-  updater.js:
-       → isLotroRunning() via tasklist (spawnSync, windowsHide: true)
-       → Falls LOTRO läuft: VBScript-Dialog (windowsHide: false!)
-           "Wurde LOTRO bereits beendet?" Ja → weiter | Nein →
-           "Soll LOTRO jetzt beendet werden?" Ja → taskkill + weiter | Nein →
-           Hinweis-Dialog (OK bestätigen) + process.exit(0)
-       → wartet 1s (Watcher-Prozess komplett beendet)
-       → waitForFile auf install-autostart.js (max 10s)
-       → npm install  (Fehler → errors[])
-       → node install-autostart.js install (Fehler → errors[])
-       → version.json aktualisieren (Fehler → errors[])
-       → getLOTROPath() → Main.lua + DeathTracker.plugin von GitHub laden → in Plugin-Verzeichnis kopieren
-           (Fehler → errors[], aber nicht fatal — Client-Update bleibt erfolgreich)
-       → Abschluss-Dialog: Erfolg (Info-Icon) ODER Fehlerliste nummeriert + Log-Pfad (Critical-Icon)
-       → updater.js löscht sich selbst
-```
-
-**Randfälle:** Kein Internet / GitHub nicht erreichbar → still überspringen. URL-Validierung schlägt fehl (Tag existiert nicht) → Update abgebrochen. Download-Fehler → update-staging/ wird bereinigt, Produktionsdateien bleiben komplett unangetastet. Beim nächsten Watcher-Start wird ein altes update-staging/ automatisch aufgeräumt.
+**Installer / Updater** (Details → `Client/CLAUDE.md`):
+- `INSTALL.bat` — Erstinstallation inkl. LOTRO-Running-Check
+- `UPDATE.bat` — Upgrade; killt alle `node.exe` vor Datei-Kopieren
+- `UNINSTALL.bat` — Volldeinstallation mit Self-Copy-Pattern
+- `REINSTALL.bat` — Neuinstallation via GitHub-Download + Staging-Pattern
 
 ### PluginData Format
 
@@ -240,24 +124,18 @@ Das Plugin speichert via `Turbine.DataScope.Character` zwei **Lua-Tabellen** (ni
   ["version"] = "2.1",
 }
 ```
+Das `content`-Feld ist ein escaped JSON-String. Der Client unescaped mit `.replace(/\\"/g, '"')` vor `JSON.parse()`.
 
 **`DeathTracker_State.plugindata`** (ab v2.4) — wird vom Watcher gelesen:
 ```
-{
-  ["totalDeathsTrackedLocally"] = 42.0,
-}
+{ ["totalDeathsTrackedLocally"] = 42.0 }
 ```
-Enthält den kumulierten Todes-Zähler über alle Sessions. Wird vom Watcher in `syncLocalDeaths()` genutzt, um fehlende Tode (z. B. Client nicht gestartet) zu erkennen und still nachzutragen. Referenzpfad: `[LotroPath]/PluginData/[Server]/[Charakter]/DeathTracker_State.plugindata`
+Kumulierter Todes-Zähler über alle Sessions. Referenzpfad: `[LotroPath]/PluginData/[Server]/[Charakter]/DeathTracker_State.plugindata`
 
-**`Client/deaths.local.json`** (ab v2.4) — Watcher-seitig:
+**`Client/deaths.local.json`** (ab v2.4):
 ```json
-{
-  "characters": {
-    "Inge": { "baselineServer": 40, "firstSeenAt": "2026-03-06T11:00:00.000Z" }
-  }
-}
+{ "characters": { "Inge": { "baselineServer": 40, "baselinePlugin": 38, "firstSeenAt": "2026-03-06T11:00:00.000Z" } } }
 ```
-Speichert den DB-Todesstand zum Zeitpunkt der Erst-Erkennung. Formel: `missing = currentPlugin - (currentServer - baselineServer)`.
 
 ### Race/Class Enum-Werte (ab v2.1)
 
@@ -272,146 +150,46 @@ Speichert den DB-Todesstand zum Zeitpunkt der Erst-Erkennung. Formel: `missing =
 | 114 = Beorninger | | 162 = Jäger | 215 = Schläger |
 | | | 172 = Waffenmeister | 216 = Seefahrer |
 
-Quelle: LotroCompanion/lotro-data (lore/races.xml + lore/classes.xml), **noch nicht live in-game verifiziert** (→ RISIKOANALYSE-v2.0.md P1-A). Falsches Mapping landet still als `"Unknown"` in der DB.
-Das `content`-Feld ist ein escaped JSON-String. Der Client unescaped mit `.replace(/\\"/g, '"')` vor `JSON.parse()`.
+Quelle: LotroCompanion/lotro-data — **noch nicht live in-game verifiziert**. Falsches Mapping landet still als `"Unknown"` in der DB.
 
 ### Duplikat-Schutz
 
 Client: `syncData.lastUpdate > lastProcessedTimestamp` — überspringt bereits verarbeitete Events.
-Plugin: `isPlayerDead`-Flag (Todeszustand) + `lastDeathWasLogged`-Flag (verhindert Doppel-Log) — wird erst bei Revive (Morale > 0) zurückgesetzt.
+Plugin: `isPlayerDead`-Flag + `lastDeathWasLogged`-Flag — wird erst bei Revive (Morale > 0) zurückgesetzt.
 
 ### Timestamps
 
-LOTRO liefert Spielzeit via `Turbine.Engine.GetGameTime()`. Das Plugin schreibt `"TIMESTAMP"` als Platzhalter für date/time-Felder. `client.js` ersetzt diese mit echter Systemzeit im de-DE-Locale-Format.
+LOTRO schreibt `"TIMESTAMP"` als Platzhalter. `client.js` ersetzt mit echter Systemzeit im de-DE-Locale-Format.
 
 ---
 
-## Kritische Implementierungsdetails
+## syncLocalDeaths — Lokaler Tod-Abgleich (ab v2.4, Formel-Fix in v2.6)
 
-1. **`windowsHide: true`** — ALLE `exec()` und `spawn()` Aufrufe im Watcher MÜSSEN diese Option haben, sonst öffnet Windows alle 5 Sekunden ein CMD-Fenster.
-
-2. **Package-Name Konsistenz** — `.plugin`-Datei muss `<Package>DodasWelt.DeathTracker.Main</Package>` enthalten (entspricht `Main.lua` Dateiname).
-
-3. **`cd /d "%~dp0"`** — Muss als erste aktive Zeile in `INSTALL.bat` und `UPDATE.bat` stehen, sonst scheitern die Skripte bei Ausführung aus einem anderen Verzeichnis.
-
-4. **`copy` statt `xcopy`** — Wildcards mit `xcopy /I` sind unzuverlässig; immer einzelne Dateien per `copy` kopieren.
-
-5. **chokidar `ignoreInitial: true`** — Der Client verarbeitet beim Start KEINE bestehenden Dateien, nur neue Änderungen.
-
-6. **`POST /death/next` erwartet `id`** — Das Overlay sendet `{ id: deathId }`. Der Server markiert nur den Eintrag als gezeigt, dessen ID übereinstimmt. Ohne ID-Angabe fällt er auf den ältesten unverarbeiteten Eintrag zurück (Rückwärtskompatibilität).
-
-7. **CORS nur auf eigene Routen** — `add_cors_headers()` prüft `$_SERVER['REQUEST_URI']` auf `/wp-json/lotro-deaths/` und kehrt sonst sofort zurück. Nicht auf alle WP-Seiten ausweiten.
-
-8. **Watcher-Template-Escaping** — `createWatcherScript()` in `install-autostart.js` ist ein Backtick-Template. Keine verschachtelten Template-Literals im generierten Watcher-Code verwenden (String-Konkatenation stattdessen), da sonst Escape-Hölle entsteht.
-
-9. **WP Plugin ZIP-Struktur** — Das `lotro-death-tracker.zip` Release-Asset muss den Plugin-Ordner direkt enthalten: `lotro-death-tracker/lotro-death-tracker.php`. Nur dann funktioniert der WordPress-Update-Mechanismus korrekt.
-
-10. **`POST /death` hat keinen `data`-Wrapper** — Die GET-Endpoints `/death/current` und `/death/next` antworten mit `{ success, data: {...}, queueLength }`. Der POST-Endpoint `/death` antwortet dagegen direkt mit `{ success, message, queuePosition, deathCount, id }` ohne `data`-Unterobjekt. In `client.js` also `response.data.queuePosition` (nicht `response.data.data.queuePosition`).
-
-11. **`client.js` Auto-Restart** — `CONFIG.autoRestart = true` bewirkt, dass der Client nach einem uncaught Exception nach 5 Sekunden automatisch neu startet. chokidar verwendet `awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 100 }` — Dateiänderungen werden erst verarbeitet, wenn die Datei 500 ms lang nicht mehr beschrieben wird (verhindert Teillesungen).
-
-12. **`UPDATE.bat` beendet ALLE `node.exe`** — `taskkill /F /IM node.exe /T` in Schritt 1 trifft nicht nur Watcher/Client, sondern jeden Node.js-Prozess auf dem PC. Danach startet `install-autostart.js install` den neuen Watcher sofort — Windows-Neustart ist nicht mehr erforderlich. Beim Modifizieren von UPDATE.bat darauf achten: `taskkill` läuft VOR dem Kopieren der Dateien (damit Datei-Handles freigegeben sind), `timeout /t 2` gibt Windows Zeit zur Aufräumung.
-
-13. **`UPDATE.bat`/`INSTALL.bat` Node.js-Pfad im Admin-Kontext** — `node` ist bei benutzerweiten Installationen (nvm, User-Installer) nicht im Admin-PATH. Beide BAT-Dateien erkennen Node.js aktiv: erst `where node`, dann Fallback auf `%PROGRAMFILES%\nodejs\node.exe` und `%USERPROFILE%\AppData\Local\Programs\node\node.exe`. Gefundener Pfad wird in `%NODE_CMD%`/`%NPM_CMD%` gespeichert; alle nachfolgenden Aufrufe nutzen diese Variablen. Nicht gefunden → `INSTALL.bat` öffnet Browser mit Node.js-Installer-URL + Neustart-Hinweis; `UPDATE.bat` zeigt manuelle Anleitung + `pause`.
-
-14. **`UPDATE.bat`/`INSTALL.bat` Logdatei bei `%~dp0`** — Das Log landet unter `%~dp0update.log` bzw. `%~dp0install.log` (= Verzeichnis der BAT-Datei), **nicht** in `%TEMP%`. Grund: `%TEMP%` zeigt im Admin-Kontext auf `C:\Windows\Temp`, nicht auf den Nutzer-Temp-Ordner. Die Logdatei wird weder bei Erfolg noch bei Fehler gelöscht. Schritt 3 (`npm install`) entfernt zuvor ein ggf. vorhandenes defektes `node_modules\npm`-Verzeichnis (Ursache für `MODULE_NOT_FOUND`-Fehler mit lokalem npm), bevor der globale `NPM_CMD` aufgerufen wird. Am Ende erscheint ein VBScript-Popup (`cscript //nologo`) zur Bestätigung — dieses blockt das Skript und ist sichtbar, auch wenn das CMD-Fenster sich danach schließt.
-
-15. **`vbsDialog()` in `updater.js` — `windowsHide: false` ist absichtlich** — Der Updater wird zwar mit `windowsHide: true` gespawnt (läuft unsichtbar), aber `wscript.exe` für VBScript-MsgBox-Dialoge MUSS mit `windowsHide: false` aufgerufen werden. VBScript-Dialoge erscheinen trotzdem sichtbar, auch wenn der Elternprozess versteckt ist. Die temporäre VBS-Datei (`_upd_dlg.vbs`) wird mit `'latin1'`-Encoding geschrieben, damit deutsche Umlaute (Windows-1252) korrekt dargestellt werden. Rückgabewerte: 6=Ja (vbYes), 7=Nein (vbNo), 1=OK.
-
-16. **Watcher Singleton-Lock (`watcher.pid`)** — `acquireLock()` wird als **erstes** nach den Log-Startmeldungen aufgerufen (vor `checkAndApplyUpdate()`). Liest PID aus `watcher.pid`; existiert die Datei und lebt der Prozess (`process.kill(pid, 0)` ohne Exception) → prüft via `spawnSync('tasklist', ['/FI', 'PID eq X', ...])` ob der Prozess auch `node.exe` ist (PID-Wiederverwendungs-Schutz) → nur dann `process.exit(0)`. Stale-Lock (ESRCH oder fremder Prozess) → überschreiben. `releaseLock()` löscht die Datei nur wenn `pid === process.pid` (verhindert Race bei schnellem Neustart). Wird in SIGINT, SIGTERM und `process.on('exit', ...)` aufgerufen. **`install-autostart.js install()` löscht `watcher.pid` vor dem Spawn des neuen Watchers** (verhindert Blockierung bei Mehrfachaufruf). Generiert in `createWatcherScript()` — keine Backtick-Template-Literals im Lock-Code verwenden (nur String-Konkatenation).
-
-17. **`goto`-basierte Kontrollstruktur in BAT-Dateien** — Multi-line `if (...) else (...)` Blöcke nach `call`-Befehlen können CMD dazu bringen, das Skript still abzubrechen (kein Fehlercode, kein Output). Deshalb: nach jedem `call` sofort `set "EC=%errorLevel%"` (noch VOR dem nächsten `echo`, da `echo` `%errorLevel%` zurücksetzt), dann `if "%EC%" neq "0" goto :error_label`. Dieses Muster ist in INSTALL.bat und UPDATE.bat konsequent durchgezogen.
-
-18. **`with_test_tables()` in WP-Plugin** — Tauscht `$this->table_deaths` / `$this->table_characters` temporär gegen die `_test`-Varianten für die Dauer eines Callbacks. PHP ist single-threaded pro Request, daher race-condition-frei. `api_test_clear()` nutzt `TRUNCATE` statt `DELETE` — setzt Auto-Increment zurück.
-
-19. **H3-Fix: Signal-0-Check in `startClient()`** — `clientProcess.killed` ist `false` wenn der Prozess durch Antivirus oder externe Kill-Signale beendet wurde (Node.js setzt das Flag nur bei explizitem `.kill()`-Aufruf). Deshalb zusätzlich `process.kill(pid, 0)` als Liveness-Check: wirft keine Exception = Prozess lebt; ESRCH = Prozess tot → `clientProcess = null` + Neustart. **Nur im Watcher-Template** (`createWatcherScript()` in `install-autostart.js`).
-
-20. **H7-Fix: Staging in `downloadFileSync()` (`updater.js`)** — Plugin-Dateien werden zuerst als `.tmp` heruntergeladen, dann atomar umbenannt. Direktes Schreiben in `Main.lua` kann bei Abbruch/Fehler eine kaputte Datei hinterlassen, die LOTRO als defekt markiert und eine vollständige Plugin-Ordner-Löschung + Neuinstallation erfordert. Windows: PowerShell `Invoke-WebRequest -OutFile tmp` + `Move-Item -Force tmp dest`. Linux: `curl -fsSL -o tmp url` + `renameSync`.
-
-21. **H6-Fix: npm-Pakete-Existenz-Check nach `npm install` (`updater.js`)** — Nach `npm install` wird geprüft ob `chokidar` und `axios` in `node_modules/` existieren. Antivirus kann `npm install` scheinbar erfolgreich beenden (Exit-Code 0), aber danach Dateien löschen → stiller `MODULE_NOT_FOUND`-Crash beim nächsten Client-Start. Bei fehlenden Paketen wird ein deutlicher Fehler in die Fehlerliste + Abschluss-Dialog aufgenommen.
+**Formel (korrekt ab v2.6):**
+```
+missing = (currentPlugin - baselinePlugin) - (currentServer - baselineServer)
+```
+- `currentPlugin` = `totalDeathsTrackedLocally` aus `DeathTracker_State.plugindata` (kumulativer Lifetime-Counter)
+- `baselinePlugin` **PFLICHT** — ohne ihn entstehen Phantomtode (Bug v2.4/v2.5)
+- **Migration v2.6**: Alte Einträge ohne `baselinePlugin` → Baseline automatisch neu gesetzt
+- **DB-Reset-Schutz**: `currentServer < baselineServer` → Log-Warnung + Baseline-Reset
 
 ---
 
-## API Endpoints (dodaswelt.de)
+## LOTRO-Pfad-Erkennung
 
-```
-POST   /wp-json/lotro-deaths/v1/death             # Event senden (death ODER levelup)
-GET    /wp-json/lotro-deaths/v1/death/current     # Ältester unverarbeiteter Death
-POST   /wp-json/lotro-deaths/v1/death/next        # Aktuellen als gezeigt markieren, nächsten holen
-POST   /wp-json/lotro-deaths/v1/death/silent      # Fehlende Tode still nachtragen (processed=1, kein Overlay)
-GET    /wp-json/lotro-deaths/v1/queue             # Queue-Status
-GET    /wp-json/lotro-deaths/v1/history           # History (?limit=N, ?character=Name)
-GET    /wp-json/lotro-deaths/v1/characters        # Alle Characters mit Level + Todes-Statistiken
-GET    /wp-json/lotro-deaths/v1/health            # System-Status
-GET    /wp-json/lotro-deaths/v1/streamers         # Alle Streamer mit LOTRO-Stats (für herrin-inge.de)
-POST   /wp-json/lotro-deaths/v1/streamers/mapping # Mapping hinzufügen/aktualisieren [Admin-Auth]
-DELETE /wp-json/lotro-deaths/v1/streamers/mapping # Mapping löschen [Admin-Auth]
-```
+**Windows** (INSTALL.bat, UPDATE.bat, client.js):
+1. Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders\Personal`
+2. OneDrive: `%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online`
+3. Standard: `%USERPROFILE%\Documents\The Lord of the Rings Online`
+4. **Nur INSTALL.bat:** Manuelle Eingabe via `SET /P`
 
-**Response-Format `POST /death` (kein `data`-Wrapper!):**
-```json
-{ "success": true, "message": "Death event queued", "queuePosition": 1, "deathCount": 5, "id": 42 }
-```
+**Linux** (client.js, install-autostart.js-Templates, updater.js):
+1. `LOTRO_PATH` Env-Var (höchste Priorität)
+2. Steam native → Steam Flatpak → Steam Library VDF-Scan → Lutris YAML-Scan
+3. Fallback: `~/Documents/The Lord of the Rings Online`
 
-**Response-Format GET `/death/current` und POST `/death/next` (mit `data`-Wrapper):**
-```json
-{ "success": true, "data": { "id": 1, "characterName": "...", "level": 10, "deathCount": 5, "date": "...", "time": "...", "datetime": "...", "region": "..." }, "queueLength": 2 }
-```
-
-**levelup-Events** werden vom PHP nicht in die Queue eingetragen – nur der `current_level` in `wp_lotro_characters` wird aktualisiert.
-
----
-
-## Datenbankstruktur (WordPress)
-
-- `wp_lotro_deaths` – Death-Queue: Spalten `id, character_name, level, event_type, death_count, death_date, death_time, death_datetime, region, race, character_class, timestamp, received_at, processed, shown_at`
-- `wp_lotro_characters` – Charakter-Statistiken: `character_name, current_level, total_deaths, race, character_class, last_seen`
-- `wp_lotro_streamer_mapping` – Zuordnung: `twitch_username, character_name, display_name, race, character_class` (UNIQUE auf `twitch_username` und `character_name`)
-
-DB-Migration läuft automatisch via `maybe_upgrade()` (`plugins_loaded`-Hook), gesteuert über WP-Option `lotro_death_tracker_db_version` (aktuell `2.1`).
-
-**Kritisch:** `dbDelta` fügt bei bestehenden Tabellen manchmal keine neuen Spalten hinzu. Deshalb enthält `create_tables()` nach `dbDelta` einen expliziten `SHOW COLUMNS`-Check mit `ALTER TABLE` als Fallback. Bei jeder neuen Spalte **muss** dieser Block erweitert werden. Die DB-Version in `$db_version` muss bei jeder Schema-Änderung erhöht werden, damit `maybe_upgrade()` die Migration erneut ausführt.
-
-**Datenmigration (einmalig):** Das `INSERT INTO wp_lotro_characters … SELECT FROM wp_lotro_deaths` in `create_tables()` läuft nur einmalig, geschützt durch die separate WP-Option `lotro_death_tracker_data_migration` (`'0'` → `'1'`). Diese Option ist unabhängig von `$db_version`, damit zukünftige Schema-Bumps die Migration nicht erneut auslösen.
-
-**Reihenfolge in `api_submit_event`:** Erst `INSERT` in `wp_lotro_deaths`, dann `upsert_character`. Nicht umkehren – sonst wird der Todes-Counter erhöht, auch wenn der Queue-Eintrag fehlschlägt.
-
----
-
-## Audio-Logik im Overlay
-
-| Situation | Sound |
-|---|---|
-| Normaler Tod (deathCount nicht durch 5 teilbar) | `Trauerlied_1.mp3` |
-| Meilenstein-Tod (5., 10., 15., … = `deathCount % 5 === 0`) | zufällig `Alert_1.mp3` **oder** `Alert_2.mp3` |
-
-Audio-URLs: `https://www.dodaswelt.de/lotro/` + Dateiname. Konfiguriert in `CONFIG.SOUND_URL` und `CONFIG.ALERT_SOUND_URLS` im Overlay.
-
-### Overlay-Anzeige
-
-Das Overlay zeigt pro Death-Event für `DISPLAY_DURATION` (Standard: 10 Sekunden):
-- `GEFALLEN` (Titel, animiert)
-- Charakter-Name
-- `Level N`
-- `N Mal gestorben` ← Todes-Zähler aus `death.deathCount`
-
-**Mapping-Filter:** Beim Start (und alle 5 Minuten) holt das Overlay `/streamers` und baut intern ein `Set` der gemappten Charakternamen auf. Deaths von Charakteren, die **nicht** im Set sind, werden per `skipDeath()` still übersprungen (`/death/next` aufrufen, nicht anzeigen) und der nächste Eintrag sofort geprüft. Ist das Set leer (API nicht erreichbar beim Start), wird kein Filter angewendet (fail-open).
-
-Der Filter greift in **beiden** Pfaden: im regulären Polling-Loop (`checkForDeaths`) und im Queue-Vorschub nach einer Anzeige (`advanceQueue`). Nur so ist sichergestellt, dass auch direkt aufeinanderfolgende Tode korrekt gefiltert werden.
-
-### lotro-data-fetcher.js (Website-Integration)
-
-IIFE-Modul-Pattern — wird als `LOTROData` global verfügbar. Öffentliche API:
-- `LOTROData.getCurrentCharacter(name?)` → letzter aktiver Charakter (via `/characters`, geordnet nach `last_seen DESC`)
-- `LOTROData.getLatestDeath(name?)` → letzter verarbeiteter Tod aus History
-- `LOTROData.getAllDeaths(limit?, name?)` → mehrere Einträge aus History
-- `LOTROData.getAllCharacters()` → alle Charaktere mit Level + Todes-Statistiken
-- `LOTROData.getStats()` → Gesamtstatistiken via `/health`
-- `LOTROData.watchForUpdates(callback, interval?)` → ruft Callback bei jedem neuen Tod auf (Standard: 30 s)
-- `LOTROData.getAllStreamers()` → alle Streamer mit LOTRO-Stats aus `/streamers` (für `#tode`/`#teilnehmer`)
-- `LOTROData.getStreamer(twitchUsername)` → Stats für einen einzelnen Streamer
-- `LOTROData.watchStreamers(callback, interval?)` → Callback bei Änderungen (Deaths/Level), Standard: 60 s
-- `LOTROData.setApiUrl(url)` → API-URL für andere Umgebungen überschreiben
+> **KRITISCH:** `getLOTROPath()` ist **viermal** implementiert: `client.js`, Watcher-Template in `install-autostart.js`, Status-Server-Template in `install-autostart.js`, IIFE in `updater.js`. Bei Änderungen **alle vier Stellen synchron halten!**
 
 ---
 
@@ -419,98 +197,56 @@ IIFE-Modul-Pattern — wird als `LOTROData` global verfügbar. Öffentliche API:
 
 ### GitHub Releases (ab v2.0)
 
-Jeder Release enthält zwei ZIP-Assets:
+| Asset | Inhalt |
+|---|---|
+| `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, alle BAT/SH-Skripte, `ANLEITUNG.md` |
+| `lotro-death-tracker.zip` | `lotro-death-tracker/lotro-death-tracker.php` (für WP-Auto-Update) |
 
-| Asset | Inhalt | Für wen |
-|---|---|---|
-| `LOTRO-Death-Tracker-vX.Y.zip` | `Client/`, `LOTRO-Plugin/`, `INSTALL.bat`, `UPDATE.bat`, `INSTALL.sh`, `UPDATE.sh`, `ANLEITUNG.md` | Streamer (Erst- und Upgrade-Installation) |
-| `lotro-death-tracker.zip` | `lotro-death-tracker/lotro-death-tracker.php` | WordPress Auto-Update-Mechanismus |
-
-**Versionsprüfung (PFLICHT vor jedem Release und Pre-Release):**
+**Versionsprüfung (PFLICHT vor jedem Release):**
 ```bash
-# Alle Versionsstellen auf einmal prüfen – alle Werte müssen identisch sein!
 grep -h "\"version\"" Client/package.json Client/version.json.template
 grep -h "Version:" Client/client.js WordPress/lotro-death-tracker.php
 grep -h "version = " Client/client.js LOTRO-Plugin/DodasWelt/DeathTracker/Main.lua
 grep -h "<Version>" LOTRO-Plugin/DodasWelt/DeathTracker.plugin
 grep -h "Installierte Version:" INSTALL.bat UPDATE.bat
-grep -h "v2\." INSTALL.bat UPDATE.bat
+grep -h "v[0-9]\." INSTALL.bat UPDATE.bat UNINSTALL.bat REINSTALL.bat
 grep -m1 "^\*\*Version" ANLEITUNG.md
 grep -h "Version:" Website/lotro-data-fetcher.js
-grep -h "@v2\." Website/lotro-data-fetcher.js CLAUDE.md
+grep -h "@v[0-9]\." Website/lotro-data-fetcher.js Overlay/CLAUDE.md
 grep -h "'version'" WordPress/lotro-death-tracker.php
-grep -h "Version:" INSTALL.sh UPDATE.sh
+grep -h "Version:" INSTALL.sh UPDATE.sh UNINSTALL.sh REINSTALL.sh
 ```
-→ Alle ausgegebenen Versionsnummern müssen `X.Y` sein. Erst wenn das stimmt, weitermachen.
+→ Alle ausgegebenen Versionsnummern müssen `X.Y` sein.
 
-**Release erstellen** (wenn der Nutzer es mitteilt):
+**Code-Review (PFLICHT nach Versionskorrektur):** `/code-review` auf alle geänderten Dateien ausführen.
+
+**Release erstellen:**
 ```bash
-# 1. Staging-Verzeichnis mit Top-Level-Ordner anlegen (ZIP muss Ordner enthalten!)
 mkdir -p LOTRO-Death-Tracker-vX.Y
-cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat INSTALL.sh UPDATE.sh ANLEITUNG.md LOTRO-Death-Tracker-vX.Y/
-
-# 2. Streamer-ZIP erstellen
-python3 -c "
-import shutil, os
-shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')
-"
-
-# 3. WP-Plugin-ZIP erstellen (muss Struktur lotro-death-tracker/lotro-death-tracker.php haben)
+cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat UNINSTALL.bat REINSTALL.bat INSTALL.sh UPDATE.sh UNINSTALL.sh REINSTALL.sh ANLEITUNG.md LOTRO-Death-Tracker-vX.Y/
+python3 -c "import shutil; shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')"
 mkdir -p lotro-death-tracker
 cp WordPress/lotro-death-tracker.php lotro-death-tracker/
 python3 -c "import shutil; shutil.make_archive('lotro-death-tracker', 'zip', '.', 'lotro-death-tracker')"
-
-# 4. GitHub Release + Tag anlegen
-gh release create vX.Y \
-  --title "vX.Y – ..." \
-  --notes "..." \
-  LOTRO-Death-Tracker-vX.Y.zip \
-  lotro-death-tracker.zip
-
-# 4b. Als latest markieren (PFLICHT – immer nach gh release create UND nach Pre-Release → Release!)
-gh release edit vX.Y --latest
-
-# 5. Aufräumen
+gh release create vX.Y --title "vX.Y – ..." --notes "..." LOTRO-Death-Tracker-vX.Y.zip lotro-death-tracker.zip
+gh release edit vX.Y --latest   # PFLICHT!
 rm -rf LOTRO-Death-Tracker-vX.Y lotro-death-tracker
 ```
 
-**Pre-Release → regulärer Release** (nach erfolgreichem Test):
+**Pre-Release → regulärer Release:**
 ```bash
 gh release edit vX.Y --prerelease=false
 gh release edit vX.Y --latest
 ```
 
-### LOTRO-Pfad-Erkennung
-
-**Windows** (INSTALL.bat, UPDATE.bat, client.js):
-1. Registry: `HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders\Personal`
-2. OneDrive: `%USERPROFILE%\OneDrive\Documents\The Lord of the Rings Online`
-3. Standard: `%USERPROFILE%\Documents\The Lord of the Rings Online`
-4. **Nur INSTALL.bat:** Manuelle Eingabe via `SET /P` (Erstinstallation akzeptiert interaktiven Input)
-   **UPDATE.bat:** Plugin-Update wird still übersprungen (Warnung + manuelle Kopieranleitung, kein Input-Prompt)
-
-**Linux** (client.js, install-autostart.js-Template, updater.js-IIFE):
-1. `LOTRO_PATH` Env-Var (höchste Priorität)
-2. Steam native: `~/.steam/steam/steamapps/compatdata/212500/pfx/drive_c/users/steamuser/My Documents/LOTRO`
-3. Steam Flatpak: `~/.var/app/com.valvesoftware.Steam/data/Steam/steamapps/compatdata/212500/.../LOTRO`
-4. Steam Library VDF-Scan: `libraryfolders.vdf` aller bekannten Steam-Config-Pfade — findet nicht-standard Library-Ordner (zweite Festplatte etc.)
-5. Lutris YAML-Scan: `~/.config/lutris/games/*.yml` — liest `wine_prefix:` oder `prefix:`
-6. Fallback: `~/Documents/The Lord of the Rings Online`
-
-> **KRITISCH:** `getLOTROPath()` ist dreifach implementiert: `client.js`, Watcher-Template in `install-autostart.js` (`getLotroPath()`), IIFE in `updater.js`. Bei Änderungen (neuer Pfad-Fallback, neue Launcher-Unterstützung) **alle drei Stellen synchron halten!**
-
-StreamElements Overlay URL (für Streamer): `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH` (1920×1080)
-
 ---
 
 ## Versionierungsstrategie (ab v2.0)
 
-- **Schema:** `MAJOR.MINOR` (z. B. `2.0`, `2.1`, `2.2`)
-- Jedes neue Feature = neue Minor-Version. Kein Patch-Level für End-Nutzer.
-- GitHub Releases sind die maßgebliche Quelle (Tag-Format: `v2.0`, `v2.1` usw.).
-- `$db_version` muss bei jeder DB-Schemaänderung auf die aktuelle Minor-Version gesetzt werden.
+- **Schema:** `MAJOR.MINOR` (z. B. `3.0`, `3.1`) — kein Patch-Level für End-Nutzer.
+- `$db_version` nur erhöhen bei DB-Schemaänderung.
 
-Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
+Bei jedem Release alle Versionsnummern synchron halten:
 
 | Datei/Feld | Pflicht |
 |---|---|
@@ -522,99 +258,18 @@ Bei jedem Release alle Versionsnummern synchron halten (Beispiel für vX.Y):
 | `Client/client.js` Header-Kommentar | auf `Version: X.Y` setzen |
 | `LOTRO-Plugin/DeathTracker.plugin` `<Version>` | auf `X.Y` setzen |
 | `LOTRO-Plugin/Main.lua` Kommentar + Config | auf `"X.Y"` setzen |
-| `INSTALL.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
-| `INSTALL.bat` Popup-Text (`MsgBox`) | auf `vX.Y` setzen |
-| `UPDATE.bat` Fenstertitel (`title`) | auf `vX.Y` setzen |
-| `UPDATE.bat` Header-Echo (`UPDATE AUF VERSION`) | auf `X.Y` setzen |
-| `UPDATE.bat` Erfolgsmeldung `Installierte Version:` | auf `X.Y` setzen |
-| `UPDATE.bat` Popup-Text (`MsgBox`) | auf `vX.Y` setzen |
-| `ANLEITUNG.md` Versionsnummer im Titel, TOC-Eintrag + Update-Abschnitt | auf `X.Y` setzen |
-| `Website/lotro-data-fetcher.js` Header-Kommentar `Version:` | auf `X.Y` setzen |
-| `Website/lotro-data-fetcher.js` CDN-URL im Header-Kommentar (`@vX.Y`) | auf `vX.Y` setzen |
+| `INSTALL.bat` Erfolgsmeldung + Popup-Text | auf `X.Y` / `vX.Y` setzen |
+| `UPDATE.bat` Fenstertitel + Header + Erfolgsmeldung + Popup | auf `X.Y` / `vX.Y` setzen |
+| `UNINSTALL.bat` Version-Kommentar | auf `X.Y` setzen |
+| `REINSTALL.bat` Version-Kommentar | auf `X.Y` setzen |
+| `ANLEITUNG.md` Versionsnummer im Titel, TOC + Update-Abschnitt | auf `X.Y` setzen |
+| `Website/lotro-data-fetcher.js` Header `Version:` + CDN-URL `@vX.Y` | auf `X.Y` / `vX.Y` setzen |
 | `WordPress/lotro-death-tracker.php` Health-Endpoint `'version'` | auf `X.Y` setzen |
-| `CLAUDE.md` CDN-Einbindungs-Beispiel (`@vX.Y`) | auf `vX.Y` setzen |
+| `Overlay/CLAUDE.md` CDN-Einbindungs-Beispiel (`@vX.Y`) | auf `vX.Y` setzen |
 | `INSTALL.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
 | `UPDATE.sh` Version-Kommentar + Erfolgsmeldung | auf `X.Y` setzen |
+| `UNINSTALL.sh` Version-Kommentar | auf `X.Y` setzen |
+| `REINSTALL.sh` Version-Kommentar | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand ist **v2.7** (in Entwicklung). Letzter GitHub-Release: **v2.6** (released 2026-03-10).
-
-## WordPress Plugin Auto-Update
-
-Ab v2.0 über normalen WordPress-Update-Mechanismus. Technisch:
-- `pre_set_site_transient_update_plugins`-Filter → `check_for_update()`: fragt GitHub API ab, cached 12h via WP-Transient (`lotro_death_tracker_update_info`)
-- `plugins_api`-Filter → `plugin_info()`: liefert Details für WP-Update-Popup
-- Sucht nach Release-Asset `lotro-death-tracker*.zip` (muss Struktur `lotro-death-tracker/lotro-death-tracker.php` haben)
-
-## lotro-data-fetcher.js — CDN-Einbindung
-
-Einbindung auf `herrin-inge.de` via jsDelivr:
-```html
-<script src="https://cdn.jsdelivr.net/gh/DodasWelt/LOTRO-Death-Tracker@v2.7/Website/lotro-data-fetcher.js"></script>
-```
-Bei neuem Release: `@v2.7` → `@v2.8` (usw.) im Script-Tag aktualisieren.
-
----
-
-## syncLocalDeaths — Lokaler Tod-Abgleich (ab v2.4, Formel-Fix in v2.6)
-
-`deaths.local.json` speichert pro Charakter: `{ "baselineServer": N, "baselinePlugin": M, "firstSeenAt": "..." }`
-
-**Formel (korrekt ab v2.6):**
-```
-missing = (currentPlugin - baselinePlugin) - (currentServer - baselineServer)
-```
-- `currentPlugin` = `totalDeathsTrackedLocally` aus `DeathTracker_State.plugindata` (kumulativer Lifetime-Counter)
-- `baselinePlugin` **PFLICHT** — ohne ihn entstehen Phantomtode (Bug v2.4/v2.5: `baselinePlugin` fehlte)
-- **Migration v2.6**: Alte Einträge ohne `baselinePlugin` → Baseline automatisch neu gesetzt (Log: "Baseline auf v2.6 migriert")
-- **DB-Reset-Schutz**: `currentServer < baselineServer` → Log-Warnung + Baseline-Reset
-- **Charakter-Umbenennung**: Bekannte Charaktere ohne State-File → Log-Warnung
-
----
-
-## Test-Umgebung (ab v2.2)
-
-### Zweck
-End-to-End-Tests ohne Produktionsdaten zu berühren. Testdaten landen in separaten DB-Tabellen (`wp_lotro_deaths_test`, `wp_lotro_characters_test`) und werden nach dem Test explizit geleert.
-
-### Test-Endpunkte
-
-```
-POST   /wp-json/lotro-deaths/v1/test/death          # Test-Event senden
-GET    /wp-json/lotro-deaths/v1/test/death/current  # Ältester unverarbeiteter Test-Eintrag
-POST   /wp-json/lotro-deaths/v1/test/death/next     # Test-Eintrag als gezeigt markieren
-GET    /wp-json/lotro-deaths/v1/test/queue          # Test-Queue-Status
-GET    /wp-json/lotro-deaths/v1/test/health         # Test-API-Status
-DELETE /wp-json/lotro-deaths/v1/test/clear          # Testtabellen leeren [Admin-Auth]
-```
-
-### Client im Test-Modus starten
-
-```bash
-# Env-Override – schickt Events an Test-Endpunkt
-SERVER_URL=https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/death node client.js
-```
-
-### Test-Overlay
-
-`Overlay/streamelements-overlay-test.html` — kann lokal im Browser geöffnet werden (Doppelklick). Enthält:
-- Sichtbare TEST-MODE-Badge (rot)
-- Keine Sounds
-- Kein Streamer-Filter (alle Test-Events werden angezeigt)
-- Kürzere Anzeigedauer (6 s statt 10 s)
-- Status-Zeile mit Queue-Info
-
-### Nach dem Test aufräumen
-
-```powershell
-# Testtabellen leeren (PowerShell, Admin-Credentials erforderlich)
-Invoke-RestMethod -Uri "https://www.dodaswelt.de/wp-json/lotro-deaths/v1/test/clear" `
-  -Method DELETE `
-  -Headers @{ Authorization = "Basic " + [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("user:apppassword")) }
-```
-
-### Implementierungsdetails
-
-- `with_test_tables(callable $fn)` in `lotro-death-tracker.php`: tauscht `$this->table_deaths`/`$this->table_characters` temporär gegen die `_test`-Varianten und ruft `$fn()` auf. Da PHP single-threaded pro Request ist, ist das Swapping sicher.
-- Teste Tabellen werden in `create_tables()` angelegt (gleiche Schema via `str_replace` auf den SQL-Strings). `SHOW COLUMNS`-Fallback läuft für beide Tabellen-Gruppen.
-- `api_test_clear()` nutzt `TRUNCATE` (nicht DELETE) → schneller, setzt Auto-Increment zurück.
+> **Aktueller Stand:** Code-Stand ist **v3.0** (in Entwicklung). Letzter GitHub-Release: **v2.7** (released 2026-03-13).

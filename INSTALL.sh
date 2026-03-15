@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Linux Installer
-# Version: 2.7
+# Version: 3.0
 # Installiert den Tracker fuer LOTRO via Steam+Proton oder Lutris.
 
 set -euo pipefail
@@ -14,7 +14,7 @@ err() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] FEHLER: $*" | tee -a "$LOG" >&2; }
 
 echo ""
 echo "================================================="
-echo " LOTRO Death Tracker - Installer (Linux) v2.7"
+echo " LOTRO Death Tracker - Installer (Linux) v3.0"
 echo "================================================="
 echo ""
 
@@ -129,6 +129,40 @@ else
     fi
 fi
 
+# LOTRO-Running-Check
+log "Pruefe ob LOTRO laeuft..."
+if pgrep -f "lotroclient" >/dev/null 2>&1; then
+    log "LOTRO laeuft - frage Nutzer..."
+    LOTRO_ANSWER="nein"
+    if command -v zenity &>/dev/null; then
+        if zenity --question \
+            --title="LOTRO Death Tracker - Installation" \
+            --text="LOTRO laeuft noch.\n\nSoll LOTRO jetzt beendet werden?" 2>/dev/null; then
+            LOTRO_ANSWER="ja"
+        fi
+    elif command -v kdialog &>/dev/null; then
+        if kdialog --yesno "LOTRO laeuft noch.\n\nSoll LOTRO jetzt beendet werden?" \
+            --title "LOTRO Death Tracker - Installation" 2>/dev/null; then
+            LOTRO_ANSWER="ja"
+        fi
+    else
+        echo ""
+        echo "[WARNUNG] LOTRO ist noch aktiv."
+        read -rp "LOTRO jetzt beenden und fortfahren? [j/N]: " LOTRO_INPUT
+        case "${LOTRO_INPUT,,}" in j|ja|y|yes) LOTRO_ANSWER="ja" ;; esac
+    fi
+    if [ "$LOTRO_ANSWER" = "ja" ]; then
+        log "Beende LOTRO via pkill..."
+        pkill -f "lotroclient" 2>/dev/null || true
+        sleep 2
+        log "LOTRO beendet."
+    else
+        log "Installation abgebrochen - LOTRO laeuft."
+        err "Bitte LOTRO beenden und Installation erneut ausfuehren."
+        exit 1
+    fi
+fi
+
 # Client-Dateien installieren
 log "Installiere Client nach $INSTALL_DIR ..."
 mkdir -p "$INSTALL_DIR"
@@ -145,6 +179,17 @@ log "npm-Pakete installiert."
 log "Richte Autostart ein..."
 node install-autostart.js install
 log "Autostart eingerichtet."
+
+# UNINSTALL.sh + REINSTALL.sh ins Installationsverzeichnis kopieren
+for script in UNINSTALL.sh REINSTALL.sh; do
+    if [ -f "$SCRIPT_DIR/$script" ]; then
+        cp "$SCRIPT_DIR/$script" "$INSTALL_DIR/$script"
+        chmod +x "$INSTALL_DIR/$script"
+        log "$script kopiert nach $INSTALL_DIR"
+    else
+        log "[WARNUNG] $script nicht gefunden - wird nicht kopiert."
+    fi
+done
 
 # LOTRO-Plugin kopieren
 if [ -n "$LOTRO_PATH" ] && [ -d "$LOTRO_PATH" ]; then
@@ -174,7 +219,7 @@ echo "Logs: $INSTALL_DIR/watcher.log"
 echo "      $INSTALL_DIR/client.log"
 echo ""
 if command -v notify-send &>/dev/null; then
-    notify-send "LOTRO Death Tracker" "Installation abgeschlossen! Version 2.7"
+    notify-send "LOTRO Death Tracker" "Installation abgeschlossen! Version 3.0"
 fi
 
 log "Installation abgeschlossen."
