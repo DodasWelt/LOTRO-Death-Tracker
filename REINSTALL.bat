@@ -148,20 +148,17 @@ echo try { ^(Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTR
 goto :run_gh_ps1
 
 :write_prerelease_ps1
-REM Pre-Release: neuester Pre-Release via /releases-Endpunkt
-(
-echo $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing
-echo $pre = $releases ^| Where-Object { $_.prerelease -eq $true } ^| Select-Object -First 1
-echo if (-not $pre) { $pre = $releases ^| Select-Object -First 1 }
-echo $a = $pre.assets ^| Where-Object { $_.name -like 'LOTRO-Death-Tracker-v*.zip' } ^| Select-Object -First 1
-echo if ($a) { $a.browser_download_url } else { 'ERROR_NO_ASSET' }
-) > "%_GH_PS%"
-(
-echo $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing
-echo $pre = $releases ^| Where-Object { $_.prerelease -eq $true } ^| Select-Object -First 1
-echo if (-not $pre) { $pre = $releases ^| Select-Object -First 1 }
-echo if ($pre) { $pre.tag_name } else { 'unbekannt' }
-) > "%_GH_TAG_PS%"
+echo [%DATE% %TIME%] Schritt 1: Schreibe Pre-Release PS1... >> "%REINSTALL_LOG%"
+REM Einzelne echo-Zeilen (kein compound block - robuster gegen CMD-Parser-Quirks)
+echo $r=Invoke-RestMethod 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing > "%_GH_PS%"
+echo $p=$r^|?{$_.prerelease}^|Select-Object -First 1 >> "%_GH_PS%"
+echo if^($p -eq $null^){$p=$r^|Select-Object -First 1} >> "%_GH_PS%"
+echo $a=$p.assets^|?{$_.name -like 'LOTRO-Death-Tracker-v*.zip'}^|Select-Object -First 1 >> "%_GH_PS%"
+echo if^($a^){$a.browser_download_url}else{'ERROR_NO_ASSET'} >> "%_GH_PS%"
+echo $r=Invoke-RestMethod 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases' -UseBasicParsing > "%_GH_TAG_PS%"
+echo $p=$r^|?{$_.prerelease}^|Select-Object -First 1 >> "%_GH_TAG_PS%"
+echo if^($p -eq $null^){$p=$r^|Select-Object -First 1} >> "%_GH_TAG_PS%"
+echo if^($p^){$p.tag_name}else{'unbekannt'} >> "%_GH_TAG_PS%"
 
 :run_gh_ps1
 echo [%DATE% %TIME%] Schritt 1: PS1 erstellt (USE_PRERELEASE=%USE_PRERELEASE%) >> "%REINSTALL_LOG%"
