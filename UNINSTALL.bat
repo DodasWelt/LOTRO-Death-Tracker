@@ -33,7 +33,9 @@ exit /b 0
 REM ─────────────────────────────────────────────────────────────────────────
 :from_temp
 REM Ab hier laeuft die Kopie aus %TEMP% - kann C:\LOTRO-Death-Tracker\ loeschen
-REM ─────────────────────────────────────────────────────────────────────────
+REM CWD sofort auf %TEMP% wechseln – sonst crasht CMD wenn C:\LOTRO-Death-Tracker
+REM spaeter geloescht wird (CMD-Prozess erbt CWD vom Starter, oft C:\LOTRO-Death-Tracker)
+cd /d "%TEMP%"
 set "UNINSTALL_LOG=%TEMP%\LOTRO-DT-uninstall.log"
 echo [%DATE% %TIME%] from_temp: Kopie laeuft, zeige Menue >> "%UNINSTALL_LOG%"
 
@@ -128,14 +130,14 @@ echo [SCHRITT 4/4] Loesche Installationsverzeichnis...
 echo [%DATE% %TIME%] Schritt 4: pruefe C:\LOTRO-Death-Tracker... >> "%UNINSTALL_LOG%"
 if not exist "C:\LOTRO-Death-Tracker\" goto :no_install_dir
 rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
-if exist "C:\LOTRO-Death-Tracker\" (
-    echo   [WARNUNG] C:\LOTRO-Death-Tracker konnte nicht vollstaendig geloescht werden
-    echo   Bitte manuell loeschen (evtl. nach Neustart).
-    echo [%DATE% %TIME%] Schritt 4: WARNUNG - rd fehlgeschlagen >> "%UNINSTALL_LOG%"
-) else (
-    echo   - C:\LOTRO-Death-Tracker geloescht
-    echo [%DATE% %TIME%] Schritt 4: C:\LOTRO-Death-Tracker geloescht >> "%UNINSTALL_LOG%"
-)
+if exist "C:\LOTRO-Death-Tracker\" goto :rd_warn
+echo   - C:\LOTRO-Death-Tracker geloescht
+echo [%DATE% %TIME%] Schritt 4: C:\LOTRO-Death-Tracker geloescht >> "%UNINSTALL_LOG%"
+goto :show_done
+:rd_warn
+echo   [WARNUNG] C:\LOTRO-Death-Tracker konnte nicht vollstaendig geloescht werden
+echo   Bitte manuell loeschen (evtl. nach Neustart).
+echo [%DATE% %TIME%] Schritt 4: WARNUNG - rd fehlgeschlagen >> "%UNINSTALL_LOG%"
 goto :show_done
 :no_install_dir
 echo   - C:\LOTRO-Death-Tracker nicht gefunden (evtl. bereits entfernt)
