@@ -233,6 +233,16 @@ gh release edit vX.Y --latest   # PFLICHT!
 rm -rf LOTRO-Death-Tracker-vX.Y lotro-death-tracker
 ```
 
+**Pre-Release aktualisieren (nach neuen Commits):**
+```bash
+git tag -f vX.Y
+git push --force origin refs/tags/vX.Y
+gh release upload vX.Y LOTRO-Death-Tracker-vX.Y.zip --clobber
+```
+> **PFLICHT:** `raw.githubusercontent.com/.../vX.Y/...` liefert Dateien aus dem git-Tag,
+> nicht aus dem Release-Asset. Wird der Tag nicht mitgeschoben, lädt der Auto-Updater
+> trotz neuer ZIP immer noch die alten Dateien vom ursprünglichen Tag-Commit.
+
 **Pre-Release → regulärer Release:**
 ```bash
 gh release edit vX.Y --prerelease=false
