@@ -59,14 +59,16 @@ if /I not "%CONFIRM%"=="J" (
     del "%~f0" >nul 2>&1
     exit /b 0
 )
+echo [%DATE% %TIME%] Bestaetigt, starte Deinstallation >> "%UNINSTALL_LOG%"
 echo.
 
 REM ── Schritt 1: Node.js-Prozesse beenden ──────────────────────────────────
 echo [SCHRITT 1/4] Beende laufende Prozesse...
 taskkill /F /IM node.exe /T >nul 2>&1
-REM Kurze Pause damit Windows Datei-Handles freigibt
-timeout /t 2 /nobreak >nul
+REM Kurze Pause damit Windows Datei-Handles freigibt (Countdown sichtbar)
+timeout /t 2 /nobreak
 echo   - node.exe-Prozesse beendet
+echo [%DATE% %TIME%] Schritt 1 OK >> "%UNINSTALL_LOG%"
 
 REM ── Schritt 2: Autostart-Eintraege loeschen ──────────────────────────────
 echo [SCHRITT 2/4] Entferne Autostart-Eintraege...
@@ -83,6 +85,7 @@ if exist "%STARTUP%\LOTRO-Death-Tracker-Status.vbs" (
 ) else (
     echo   - Status-Server-Autostart nicht gefunden (OK)
 )
+echo [%DATE% %TIME%] Schritt 2 OK >> "%UNINSTALL_LOG%"
 
 REM ── Schritt 3: LOTRO Plugin loeschen ─────────────────────────────────────
 echo [SCHRITT 3/4] Entferne LOTRO Plugin...
@@ -118,21 +121,27 @@ if "%LOTRO_PLUGIN_REMOVED%"=="0" (
 if "%LOTRO_PLUGIN_REMOVED%"=="0" (
     echo   [WARNUNG] LOTRO Plugin nicht gefunden (evtl. bereits entfernt oder an anderem Pfad)
 )
+echo [%DATE% %TIME%] Schritt 3 OK (PLUGIN_REMOVED=%LOTRO_PLUGIN_REMOVED%) >> "%UNINSTALL_LOG%"
 
 REM ── Schritt 4: Installationsverzeichnis loeschen ──────────────────────────
 echo [SCHRITT 4/4] Loesche Installationsverzeichnis...
+echo [%DATE% %TIME%] Schritt 4: pruefe C:\LOTRO-Death-Tracker... >> "%UNINSTALL_LOG%"
+if not exist "C:\LOTRO-Death-Tracker\" goto :no_install_dir
+rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
 if exist "C:\LOTRO-Death-Tracker\" (
-    rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
-    if exist "C:\LOTRO-Death-Tracker\" (
-        echo   [WARNUNG] C:\LOTRO-Death-Tracker konnte nicht vollstaendig geloescht werden
-        echo   Bitte manuell loeschen (evtl. nach Neustart).
-    ) else (
-        echo   - C:\LOTRO-Death-Tracker geloescht
-    )
+    echo   [WARNUNG] C:\LOTRO-Death-Tracker konnte nicht vollstaendig geloescht werden
+    echo   Bitte manuell loeschen (evtl. nach Neustart).
+    echo [%DATE% %TIME%] Schritt 4: WARNUNG - rd fehlgeschlagen >> "%UNINSTALL_LOG%"
 ) else (
-    echo   - C:\LOTRO-Death-Tracker nicht gefunden (evtl. bereits entfernt)
+    echo   - C:\LOTRO-Death-Tracker geloescht
+    echo [%DATE% %TIME%] Schritt 4: C:\LOTRO-Death-Tracker geloescht >> "%UNINSTALL_LOG%"
 )
+goto :show_done
+:no_install_dir
+echo   - C:\LOTRO-Death-Tracker nicht gefunden (evtl. bereits entfernt)
+echo [%DATE% %TIME%] Schritt 4: nicht vorhanden (OK) >> "%UNINSTALL_LOG%"
 
+:show_done
 echo.
 echo ================================================================
 echo.
@@ -142,9 +151,11 @@ echo ================================================================
 echo.
 
 REM Abschluss-Popup
+echo [%DATE% %TIME%] Zeige Abschluss-Popup... >> "%UNINSTALL_LOG%"
 echo MsgBox "LOTRO Death Tracker wurde vollstaendig deinstalliert.", 64, "Deinstallation fertig!" > "%TEMP%\_lotro_uninstall_done.vbs"
 cscript //nologo "%TEMP%\_lotro_uninstall_done.vbs"
 del "%TEMP%\_lotro_uninstall_done.vbs" >nul 2>&1
+echo [%DATE% %TIME%] Popup bestaetigt, fertig >> "%UNINSTALL_LOG%"
 
 REM Kopie loescht sich selbst
 del "%~f0" >nul 2>&1
