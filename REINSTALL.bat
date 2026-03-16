@@ -137,14 +137,11 @@ set "_GH_TAG_PS=%SystemRoot%\Temp\_lotro_gh_tag.ps1"
 if "%USE_PRERELEASE%"=="1" goto :write_prerelease_ps1
 
 REM Stabiler Release via releases/latest
-(
-echo $r = Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing
-echo $a = $r.assets ^| Where-Object { $_.name -like 'LOTRO-Death-Tracker-v*.zip' } ^| Select-Object -First 1
-echo if ($a) { $a.browser_download_url } else { 'ERROR_NO_ASSET' }
-) > "%_GH_PS%"
-(
-echo try { ^(Invoke-RestMethod -Uri 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing^).tag_name } catch { 'unbekannt' }
-) > "%_GH_TAG_PS%"
+REM Einzelne echo-Zeilen (kein compound block - ^| innerhalb ( ) wird als Pipe interpretiert)
+echo $r=Invoke-RestMethod 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing > "%_GH_PS%"
+echo $a=$r.assets^|?{$_.name -like 'LOTRO-Death-Tracker-v*.zip'}^|Select-Object -First 1 >> "%_GH_PS%"
+echo if^($a^){$a.browser_download_url}else{'ERROR_NO_ASSET'} >> "%_GH_PS%"
+echo try{^(Invoke-RestMethod 'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest' -UseBasicParsing^).tag_name}catch{'unbekannt'} > "%_GH_TAG_PS%"
 goto :run_gh_ps1
 
 :write_prerelease_ps1
