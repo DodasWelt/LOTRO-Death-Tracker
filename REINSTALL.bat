@@ -236,35 +236,46 @@ if "%EX_EC%" neq "0" (
 )
 
 del "%STAGING%\download.zip" >nul 2>&1
+echo [%DATE% %TIME%] Schritt 2: Suche Unterordner in Staging... >> "%REINSTALL_LOG%"
 
 REM Entpackter ZIP-Unterordner (LOTRO-Death-Tracker-vX.Y/)
+REM Ohne Quotes um den Wildcard-Teil - STAGING hat keine Leerzeichen
 set "STAGING_INNER="
-for /d %%d in ("%STAGING%\LOTRO-Death-Tracker-*") do set "STAGING_INNER=%%d"
-if not defined STAGING_INNER (
-    echo [%DATE% %TIME%] FEHLER: ZIP-Inhalt nicht erkannt >> "%REINSTALL_LOG%"
-    echo [FEHLER] ZIP-Inhalt nicht erkannt! (kein LOTRO-Death-Tracker-* Ordner)
-    rd /s /q "%STAGING%" >nul 2>&1
-    pause
-    exit /b 1
-)
+for /d %%d in (%STAGING%\LOTRO-Death-Tracker-*) do set "STAGING_INNER=%%d"
+echo [%DATE% %TIME%] Schritt 2: STAGING_INNER-Ergebnis: [%STAGING_INNER%] >> "%REINSTALL_LOG%"
+if not defined STAGING_INNER goto :staging_inner_error
 echo [%DATE% %TIME%] Schritt 2: STAGING_INNER=%STAGING_INNER% >> "%REINSTALL_LOG%"
 echo   - Entpackt nach: %STAGING_INNER%
 echo.
+goto :copy_runner
+
+:staging_inner_error
+echo [%DATE% %TIME%] FEHLER: ZIP-Inhalt nicht erkannt >> "%REINSTALL_LOG%"
+for /d %%x in (%STAGING%\*) do echo [%DATE% %TIME%] STAGING-Inhalt: %%x >> "%REINSTALL_LOG%"
+echo [FEHLER] ZIP-Inhalt nicht erkannt! (kein LOTRO-Death-Tracker-* Ordner)
+rd /s /q "%STAGING%" >nul 2>&1
+pause
+exit /b 1
 
 REM ── Schritt 3: Runner-Skript starten ─────────────────────────────────────────
+:copy_runner
 echo [SCHRITT 3/3] Starte Neuinstallation...
 echo ----------------------------------------------------------------
 echo [%DATE% %TIME%] Schritt 3: Kopiere Runner >> "%REINSTALL_LOG%"
 
 set "RUNNER=%TEMP%\LOTRO-DT-reinstall-runner.bat"
 copy /Y "%~f0" "%RUNNER%" >nul
-if %errorLevel% neq 0 (
-    echo [%DATE% %TIME%] FEHLER: Runner-Kopie fehlgeschlagen >> "%REINSTALL_LOG%"
-    echo [FEHLER] Runner-Skript konnte nicht erstellt werden!
-    rd /s /q "%STAGING%" >nul 2>&1
-    pause
-    exit /b 1
-)
+if %errorLevel% neq 0 goto :runner_copy_error
+goto :start_runner
+
+:runner_copy_error
+echo [%DATE% %TIME%] FEHLER: Runner-Kopie fehlgeschlagen >> "%REINSTALL_LOG%"
+echo [FEHLER] Runner-Skript konnte nicht erstellt werden!
+rd /s /q "%STAGING%" >nul 2>&1
+pause
+exit /b 1
+
+:start_runner
 
 set "RUNNER_LOG_PATH=%TEMP%\LOTRO-DT-reinstall-runner.log"
 echo [%DATE% %TIME%] Schritt 3: Start Runner: %RUNNER% --runner %STAGING% >> "%REINSTALL_LOG%"
@@ -297,17 +308,21 @@ echo [%DATE% %TIME%] STAGING=%STAGING% >> "%RUNNER_LOG%"
 echo [%DATE% %TIME%] RUNNER_LOG=%RUNNER_LOG% >> "%RUNNER_LOG%"
 
 set "STAGING_INNER="
-for /d %%d in ("%STAGING%\LOTRO-Death-Tracker-*") do set "STAGING_INNER=%%d"
-if not defined STAGING_INNER (
-    echo [%DATE% %TIME%] FEHLER: STAGING_INNER nicht gefunden >> "%RUNNER_LOG%"
-    echo [FEHLER] Staging-Verzeichnis ungueltig: %STAGING%
-    echo MsgBox "Neuinstallation fehlgeschlagen: Staging nicht gefunden!", 16, "Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
-    cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
-    del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
-    del "%~f0" >nul 2>&1
-    exit /b 1
-)
+for /d %%d in (%STAGING%\LOTRO-Death-Tracker-*) do set "STAGING_INNER=%%d"
+if not defined STAGING_INNER goto :runner_staging_error
 echo [%DATE% %TIME%] STAGING_INNER=%STAGING_INNER% >> "%RUNNER_LOG%"
+goto :runner_main
+
+:runner_staging_error
+echo [%DATE% %TIME%] FEHLER: STAGING_INNER nicht gefunden >> "%RUNNER_LOG%"
+echo [FEHLER] Staging-Verzeichnis ungueltig: %STAGING%
+echo MsgBox "Neuinstallation fehlgeschlagen: Staging nicht gefunden!", 16, "Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
+cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
+del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
+del "%~f0" >nul 2>&1
+exit /b 1
+
+:runner_main
 
 echo.
 echo ================================================================
