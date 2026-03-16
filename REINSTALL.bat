@@ -302,6 +302,9 @@ REM Aufruf: REINSTALL-runner.bat --runner <STAGING-Pfad>
 REM ════════════════════════════════════════════════════════════════════════════
 :runner_start
 timeout /t 2 /nobreak >nul
+REM CWD sofort auf %TEMP% wechseln – sonst scheitert rd /s /q C:\LOTRO-Death-Tracker
+REM weil der CMD-Prozess CWD von REINSTALL.bat erbt (oft C:\LOTRO-Death-Tracker)
+cd /d "%TEMP%"
 
 set "STAGING=%~2"
 set "RUNNER_LOG=%~3"
