@@ -89,7 +89,18 @@ function DeathTracker:Initialize()
     
     -- Persistenten Todes-Zaehler laden (akkumuliert ueber alle Sessions).
     -- Wird vom Watcher genutzt um fehlende Tode (z.B. Client nicht gestartet) zu erkennen.
-    self.State = Turbine.PluginData.Load(Turbine.DataScope.Character, "DeathTracker_State") or {};
+    -- pcall schuetzt gegen korrupte Dateien (Parse-Fehler wuerden sonst das Plugin-Laden abbrechen).
+    local ok, loaded = pcall(function()
+        return Turbine.PluginData.Load(Turbine.DataScope.Character, "DeathTracker_State");
+    end)
+    if ok and type(loaded) == "table" then
+        self.State = loaded;
+    else
+        self.State = {};
+        if not ok then
+            Turbine.Shell.WriteLine("DeathTracker: State-Datei korrupt – starte mit leerem Zustand.");
+        end
+    end
     self.State.totalDeathsTrackedLocally = self.State.totalDeathsTrackedLocally or 0;
 
     Turbine.Shell.WriteLine("=================================");
