@@ -265,7 +265,7 @@
         // ============================================
         // TEST-OVERLAY: Test-API-Endpunkte
         // Death-Events kommen aus den _test-Tabellen.
-        // Streamer-Filter nutzt produktive /streamers API.
+        // Kein Streamer-Filter im Test-Modus: alle Events werden angezeigt.
         // ============================================
 
         const TEST_BASE = CONFIG.API_URL + '/test';
@@ -297,26 +297,6 @@
             currentDeath = null;
             const overlay = document.getElementById('deathOverlay');
             if (overlay) overlay.classList.remove('show');
-        }
-
-        // Set of character names that are in the streamer mapping table.
-        // Deaths from characters NOT in this set are silently skipped.
-        // Empty set = mapping not yet loaded = no filter applied (fail-open).
-        let mappedCharacters = new Set();
-
-        // Fetch mapped character names from /streamers and cache them locally.
-        // Called once on init and then every 5 minutes so new mappings are picked up.
-        async function refreshMappedCharacters() {
-            try {
-                const response = await fetch(`${CONFIG.API_URL}/streamers`);
-                const data = await response.json();
-                if (data.success && Array.isArray(data.streamers)) {
-                    mappedCharacters = new Set(data.streamers.map(s => s.characterName));
-                    console.log('[FILTER] Gemappte Charaktere:', [...mappedCharacters]);
-                }
-            } catch (error) {
-                console.warn('[FILTER] Streamer-Liste konnte nicht geladen werden:', error);
-            }
         }
 
         // Initialize logo
@@ -420,7 +400,7 @@
 
         /**
          * Mark the displayed death as processed and fetch the next one.
-         * Uses TEST API. Streamer-Filter (produktive /streamers) gilt auch hier.
+         * Uses TEST API. Kein Streamer-Filter im Test-Modus.
          */
         async function advanceQueue(deathId) {
             try {
@@ -434,35 +414,11 @@
                 console.log('[API] Queue advanced:', data);
 
                 if (data.success && data.data && data.data.id) {
-                    const next = data.data;
-
-                    // Apply mapping filter to the next queued death as well
-                    if (mappedCharacters.size > 0 && !mappedCharacters.has(next.characterName)) {
-                        console.log(`[FILTER] "${next.characterName}" nicht im Streamer-Mapping – wird uebersprungen`);
-                        currentDeath = null;
-                        setTimeout(checkForDeaths, 500);
-                    } else {
-                        currentDeath = next;
-                        setTimeout(() => { displayDeath(next); }, 2000);
-                    }
+                    currentDeath = data.data;
+                    setTimeout(() => { displayDeath(data.data); }, 2000);
                 }
             } catch (error) {
                 console.error('[ERROR] Failed to advance queue:', error);
-            }
-        }
-
-        // Mark a death as processed without displaying it, then reset state so
-        // the polling loop will pick up the next queued entry on the next tick.
-        async function skipDeath(deathId) {
-            try {
-                await fetch(`${TEST_BASE}/death/next`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id: deathId }),
-                });
-                currentDeath = null;
-            } catch (error) {
-                console.error('[ERROR] Failed to skip death:', error);
             }
         }
 
@@ -480,14 +436,7 @@
                 const death = await fetchCurrentDeath();
                 if (!death) return;
 
-                // Streamer-Filter gilt auch im Test (produktive /streamers API)
-                if (mappedCharacters.size > 0 && !mappedCharacters.has(death.characterName)) {
-                    console.log(`[FILTER] "${death.characterName}" nicht im Streamer-Mapping – wird uebersprungen`);
-                    await skipDeath(death.id);
-                    setTimeout(checkForDeaths, 500); // sofort nächsten prüfen
-                    return;
-                }
-
+                // Kein Streamer-Filter im Test-Modus: alle Events werden angezeigt
                 if (!currentDeath || currentDeath.id !== death.id) {
                     currentDeath = death;
                     displayDeath(death);
@@ -517,7 +466,7 @@
         async function init() {
             console.log('[INIT] LOTRO Death Overlay (TEST MODE) starting...');
             console.log('[TEST] Death-Events: Test-Tabellen (/test/)');
-            console.log('[TEST] Streamer-Filter: produktive /streamers API');
+            console.log('[TEST] Kein Streamer-Filter – alle Events werden angezeigt');
             console.log('[CONFIG] Check interval:', CONFIG.CHECK_INTERVAL + 'ms');
             console.log('[CONFIG] Display duration:', CONFIG.DISPLAY_DURATION + 'ms');
             console.log('[CONFIG] Normal sound:', CONFIG.SOUND_URL || 'Not configured');
@@ -526,10 +475,6 @@
             initializeLogo();
 
             await checkTestHealth();
-
-            // Load mapped characters, then start polling
-            await refreshMappedCharacters();
-            setInterval(refreshMappedCharacters, 5 * 60 * 1000); // refresh every 5 minutes
 
             // Start polling
             setInterval(checkForDeaths, CONFIG.CHECK_INTERVAL);
