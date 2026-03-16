@@ -380,38 +380,43 @@ echo   - Plugin entfernt (gefunden: %PLUGIN_REMOVED%)
 
 REM Runner-Schritt 4: Installationsverzeichnis loeschen
 echo [4/4] Loesche altes Installationsverzeichnis...
-if not exist "C:\LOTRO-Death-Tracker\" (
-    echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker nicht vorhanden (OK) >> "%RUNNER_LOG%"
-    echo   - C:\LOTRO-Death-Tracker nicht gefunden (OK)
-    goto :install_bat
-)
+if not exist "C:\LOTRO-Death-Tracker\" goto :rd_not_needed
+echo [%DATE% %TIME%] Runner 4: Loesche C:\LOTRO-Death-Tracker... >> "%RUNNER_LOG%"
 rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
 timeout /t 1 /nobreak >nul
-if exist "C:\LOTRO-Death-Tracker\" (
-    echo [%DATE% %TIME%] Runner 4: rd Versuch 1 fehlgeschlagen - nochmal versuchen >> "%RUNNER_LOG%"
-    taskkill /F /IM node.exe /T >nul 2>&1
-    timeout /t 3 /nobreak >nul
-    rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
-    timeout /t 1 /nobreak >nul
-)
-if exist "C:\LOTRO-Death-Tracker\" (
-    echo [%DATE% %TIME%] FEHLER: C:\LOTRO-Death-Tracker konnte nicht geloescht werden >> "%RUNNER_LOG%"
-    echo.
-    echo [FEHLER] Installationsverzeichnis konnte nicht geloescht werden!
-    echo Bitte alle laufenden Programme schliessen und es erneut versuchen.
-    echo.
-    (
-    echo MsgBox "Fehler: C:\LOTRO-Death-Tracker konnte nicht geloescht werden." ^& Chr^(13^) ^& Chr^(10^) ^& "Bitte alle Node.js-Programme schliessen und REINSTALL erneut starten.", 16, "LOTRO Death Tracker - Fehler"
-    ) > "%TEMP%\_lotro_reinstall_err.vbs"
-    cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
-    del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
-    del "%~f0" >nul 2>&1
-    exit /b 1
-)
+if not exist "C:\LOTRO-Death-Tracker\" goto :rd_done
+REM Versuch 1 fehlgeschlagen - nochmal versuchen
+echo [%DATE% %TIME%] Runner 4: rd Versuch 1 fehlgeschlagen - nochmal versuchen >> "%RUNNER_LOG%"
+taskkill /F /IM node.exe /T >nul 2>&1
+timeout /t 3 /nobreak >nul
+rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
+timeout /t 1 /nobreak >nul
+if not exist "C:\LOTRO-Death-Tracker\" goto :rd_done
+goto :rd_failed_error
+
+:rd_not_needed
+echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker nicht vorhanden (OK) >> "%RUNNER_LOG%"
+echo   - C:\LOTRO-Death-Tracker nicht gefunden (OK)
+goto :install_bat
+
+:rd_done
 echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker geloescht >> "%RUNNER_LOG%"
 echo   - C:\LOTRO-Death-Tracker geloescht
 timeout /t 1 /nobreak >nul
 echo.
+goto :install_bat
+
+:rd_failed_error
+echo [%DATE% %TIME%] FEHLER: C:\LOTRO-Death-Tracker konnte nicht geloescht werden >> "%RUNNER_LOG%"
+echo.
+echo [FEHLER] Installationsverzeichnis konnte nicht geloescht werden!
+echo Bitte alle laufenden Programme schliessen und es erneut versuchen.
+echo.
+echo MsgBox "Fehler: C:\LOTRO-Death-Tracker konnte nicht geloescht werden." ^& Chr(13) ^& Chr(10) ^& "Bitte alle Node.js-Programme schliessen und REINSTALL erneut starten.", 16, "LOTRO Death Tracker - Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
+cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
+del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
+del "%~f0" >nul 2>&1
+exit /b 1
 
 :install_bat
 REM INSTALL.bat aus Staging aufrufen
@@ -419,34 +424,35 @@ echo ================================================================
 echo   Installiere neue Version...
 echo ================================================================
 echo.
-if not exist "%STAGING_INNER%\INSTALL.bat" (
-    echo [%DATE% %TIME%] FEHLER: INSTALL.bat nicht in Staging >> "%RUNNER_LOG%"
-    echo [FEHLER] INSTALL.bat nicht im Staging-Verzeichnis gefunden!
-    echo Staging fuer Diagnose belassen: %STAGING_INNER%
-    echo.
-    echo MsgBox "Neuinstallation fehlgeschlagen: INSTALL.bat nicht im Staging!", 16, "Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
-    cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
-    del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
-    del "%~f0" >nul 2>&1
-    exit /b 1
-)
+if exist "%STAGING_INNER%\INSTALL.bat" goto :run_install_bat
+echo [%DATE% %TIME%] FEHLER: INSTALL.bat nicht in Staging >> "%RUNNER_LOG%"
+echo [FEHLER] INSTALL.bat nicht im Staging-Verzeichnis gefunden!
+echo Staging fuer Diagnose belassen: %STAGING_INNER%
+echo.
+echo MsgBox "Neuinstallation fehlgeschlagen: INSTALL.bat nicht im Staging!", 16, "Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
+cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
+del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
+del "%~f0" >nul 2>&1
+exit /b 1
+:run_install_bat
 
 call "%STAGING_INNER%\INSTALL.bat"
 set "INSTALL_EC=%errorLevel%"
 echo [%DATE% %TIME%] Runner: INSTALL.bat exitCode=%INSTALL_EC% >> "%RUNNER_LOG%"
 
-if "%INSTALL_EC%"=="0" (
-    rd /s /q "%STAGING%" >nul 2>&1
-    echo [%DATE% %TIME%] Runner: Staging geloescht, abgeschlossen >> "%RUNNER_LOG%"
-) else (
-    echo.
-    echo [FEHLER] Installation fehlgeschlagen! (Code: %INSTALL_EC%)
-    echo Staging fuer Diagnose belassen: %STAGING%
-    echo.
-    echo MsgBox "Neuinstallation fehlgeschlagen!", 16, "LOTRO Death Tracker - Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
-    cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
-    del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
-)
+if "%INSTALL_EC%"=="0" goto :install_ok
+echo.
+echo [FEHLER] Installation fehlgeschlagen! (Code: %INSTALL_EC%)
+echo Staging fuer Diagnose belassen: %STAGING%
+echo.
+echo MsgBox "Neuinstallation fehlgeschlagen!", 16, "LOTRO Death Tracker - Fehler" > "%TEMP%\_lotro_reinstall_err.vbs"
+cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
+del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
+goto :install_done
+:install_ok
+rd /s /q "%STAGING%" >nul 2>&1
+echo [%DATE% %TIME%] Runner: Staging geloescht, abgeschlossen >> "%RUNNER_LOG%"
+:install_done
 
 del "%~f0" >nul 2>&1
 exit /b %INSTALL_EC%
