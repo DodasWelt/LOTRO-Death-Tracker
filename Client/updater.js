@@ -376,6 +376,20 @@ setTimeout(function() {
             if (!pluginErr) {
                 log('LOTRO-Plugin-Dateien erfolgreich aktualisiert.');
             }
+
+            // UNINSTALL/REINSTALL-Skripte aktualisieren.
+            // Diese Dateien wurden in aelteren Versionen vom Watcher nicht heruntergeladen,
+            // daher hier nachholen damit auch v2.7-Nutzer sie vollstaendig erhalten.
+            var scriptExt = process.platform === 'win32' ? '.bat' : '.sh';
+            ['UNINSTALL', 'REINSTALL'].forEach(function(name) {
+                var scriptName = name + scriptExt;
+                try {
+                    downloadFileSync(base + '/' + scriptName, path.join(dir, scriptName));
+                    log(scriptName + ' aktualisiert.');
+                } catch (e) {
+                    log('Warnung: ' + scriptName + ' konnte nicht aktualisiert werden: ' + e.message);
+                }
+            });
         })();
 
         log('Update auf v' + newVersion + (errors.length ? ' mit Fehlern' : '') + ' abgeschlossen!');
