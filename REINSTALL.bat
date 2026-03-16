@@ -269,8 +269,10 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
+set "RUNNER_LOG_PATH=%TEMP%\LOTRO-DT-reinstall-runner.log"
 echo [%DATE% %TIME%] Schritt 3: Start Runner: %RUNNER% --runner %STAGING% >> "%REINSTALL_LOG%"
-start "LOTRO Death Tracker - Neuinstallation laeuft..." cmd /c "%RUNNER%" --runner "%STAGING%"
+echo [%DATE% %TIME%] Schritt 3: Runner-Log wird erstellt in: %RUNNER_LOG_PATH% >> "%REINSTALL_LOG%"
+start "LOTRO Death Tracker - Neuinstallation laeuft..." cmd /c "%RUNNER%" --runner "%STAGING%" "%RUNNER_LOG_PATH%"
 echo.
 echo ================================================================
 echo.
@@ -291,9 +293,11 @@ REM ═════════════════════════�
 timeout /t 2 /nobreak >nul
 
 set "STAGING=%~2"
-set "RUNNER_LOG=%TEMP%\LOTRO-DT-reinstall-runner.log"
+set "RUNNER_LOG=%~3"
+if "%RUNNER_LOG%"=="" set "RUNNER_LOG=%TEMP%\LOTRO-DT-reinstall-runner.log"
 echo [%DATE% %TIME%] Runner gestartet > "%RUNNER_LOG%"
 echo [%DATE% %TIME%] STAGING=%STAGING% >> "%RUNNER_LOG%"
+echo [%DATE% %TIME%] RUNNER_LOG=%RUNNER_LOG% >> "%RUNNER_LOG%"
 
 set "STAGING_INNER="
 for /d %%d in ("%STAGING%\LOTRO-Death-Tracker-*") do set "STAGING_INNER=%%d"
@@ -317,7 +321,7 @@ echo.
 REM Runner-Schritt 1: Prozesse beenden
 echo [1/4] Beende laufende Prozesse...
 taskkill /F /IM node.exe /T >nul 2>&1
-timeout /t 2 /nobreak >nul
+timeout /t 3 /nobreak >nul
 echo [%DATE% %TIME%] Runner 1: node.exe beendet >> "%RUNNER_LOG%"
 echo   - node.exe beendet
 
@@ -361,16 +365,40 @@ echo   - Plugin entfernt (gefunden: %PLUGIN_REMOVED%)
 
 REM Runner-Schritt 4: Installationsverzeichnis loeschen
 echo [4/4] Loesche altes Installationsverzeichnis...
-if exist "C:\LOTRO-Death-Tracker\" (
-    rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
-    echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker geloescht >> "%RUNNER_LOG%"
-    echo   - C:\LOTRO-Death-Tracker geloescht
-) else (
+if not exist "C:\LOTRO-Death-Tracker\" (
+    echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker nicht vorhanden (OK) >> "%RUNNER_LOG%"
     echo   - C:\LOTRO-Death-Tracker nicht gefunden (OK)
+    goto :install_bat
 )
+rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
+timeout /t 1 /nobreak >nul
+if exist "C:\LOTRO-Death-Tracker\" (
+    echo [%DATE% %TIME%] Runner 4: rd Versuch 1 fehlgeschlagen - nochmal versuchen >> "%RUNNER_LOG%"
+    taskkill /F /IM node.exe /T >nul 2>&1
+    timeout /t 3 /nobreak >nul
+    rd /s /q "C:\LOTRO-Death-Tracker\" >nul 2>&1
+    timeout /t 1 /nobreak >nul
+)
+if exist "C:\LOTRO-Death-Tracker\" (
+    echo [%DATE% %TIME%] FEHLER: C:\LOTRO-Death-Tracker konnte nicht geloescht werden >> "%RUNNER_LOG%"
+    echo.
+    echo [FEHLER] Installationsverzeichnis konnte nicht geloescht werden!
+    echo Bitte alle laufenden Programme schliessen und es erneut versuchen.
+    echo.
+    (
+    echo MsgBox "Fehler: C:\LOTRO-Death-Tracker konnte nicht geloescht werden." ^& Chr^(13^) ^& Chr^(10^) ^& "Bitte alle Node.js-Programme schliessen und REINSTALL erneut starten.", 16, "LOTRO Death Tracker - Fehler"
+    ) > "%TEMP%\_lotro_reinstall_err.vbs"
+    cscript //nologo "%TEMP%\_lotro_reinstall_err.vbs"
+    del "%TEMP%\_lotro_reinstall_err.vbs" >nul 2>&1
+    del "%~f0" >nul 2>&1
+    exit /b 1
+)
+echo [%DATE% %TIME%] Runner 4: C:\LOTRO-Death-Tracker geloescht >> "%RUNNER_LOG%"
+echo   - C:\LOTRO-Death-Tracker geloescht
 timeout /t 1 /nobreak >nul
 echo.
 
+:install_bat
 REM INSTALL.bat aus Staging aufrufen
 echo ================================================================
 echo   Installiere neue Version...
