@@ -9,24 +9,33 @@ REM Verzeichnis loeschen. CMD liest Skripte zeilenweise – Loeschen des eigenen
 REM Verzeichnisses unterbricht die Ausfuehrung.
 REM Loesung: Kopie nach %TEMP%, von dort starten, dann Kopie loescht sich selbst.
 
+set "UNINSTALL_LOG=%TEMP%\LOTRO-DT-uninstall.log"
+echo [%DATE% %TIME%] UNINSTALL.bat gestartet von: %~f0 > "%UNINSTALL_LOG%"
+
 echo %~f0 | findstr /I "%TEMP%" >nul 2>&1
 if %errorLevel% equ 0 goto :from_temp
 
 REM Noch nicht in %TEMP% – kopiere und starte Kopie
+echo [%DATE% %TIME%] Kopiere nach TEMP... >> "%UNINSTALL_LOG%"
 set "TEMP_COPY=%TEMP%\LOTRO-DT-uninstall.bat"
 copy /Y "%~f0" "%TEMP_COPY%" >nul 2>&1
 if %errorLevel% neq 0 (
+    echo [%DATE% %TIME%] FEHLER: Kopie fehlgeschlagen >> "%UNINSTALL_LOG%"
     echo [FEHLER] Kopie nach %TEMP% fehlgeschlagen!
     pause
     exit /b 1
 )
-start "" cmd /c "%TEMP_COPY%"
+echo [%DATE% %TIME%] Kopie OK, starte Fenster... >> "%UNINSTALL_LOG%"
+start "LOTRO Death Tracker - Deinstallation" cmd /c ""%TEMP_COPY%""
+echo [%DATE% %TIME%] start-Befehl ausgefuehrt >> "%UNINSTALL_LOG%"
 exit /b 0
 
 REM ─────────────────────────────────────────────────────────────────────────
 :from_temp
 REM Ab hier laeuft die Kopie aus %TEMP% - kann C:\LOTRO-Death-Tracker\ loeschen
 REM ─────────────────────────────────────────────────────────────────────────
+set "UNINSTALL_LOG=%TEMP%\LOTRO-DT-uninstall.log"
+echo [%DATE% %TIME%] from_temp: Kopie laeuft, zeige Menue >> "%UNINSTALL_LOG%"
 
 echo.
 echo ================================================================
