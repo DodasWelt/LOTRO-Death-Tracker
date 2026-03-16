@@ -962,11 +962,15 @@ function startDownload(base, remoteVersion, stagingDir) {
 
     log('Update auf v' + remoteVersion + ' wird heruntergeladen...');
 
+    const rootBase = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/v' + remoteVersion + '/';
+    const scriptExt = process.platform === 'win32' ? '.bat' : '.sh';
     const filesToDownload = [
         { name: 'client.js',            dest: path.join(__dirname, 'client.js') },
         { name: 'install-autostart.js', dest: path.join(__dirname, 'install-autostart.js') },
         { name: 'package.json',         dest: path.join(__dirname, 'package.json') },
         { name: 'updater.js',           dest: UPDATER_PATH },
+        { name: 'UNINSTALL' + scriptExt, dest: path.join(__dirname, 'UNINSTALL' + scriptExt), url: rootBase + 'UNINSTALL' + scriptExt },
+        { name: 'REINSTALL' + scriptExt, dest: path.join(__dirname, 'REINSTALL' + scriptExt), url: rootBase + 'REINSTALL' + scriptExt },
     ];
 
     function cleanupStaging() {
@@ -1028,7 +1032,7 @@ function startDownload(base, remoteVersion, stagingDir) {
         const f = filesToDownload[idx++];
         log('Lade: ' + f.name);
         const stagingPath = path.join(stagingDir, f.name);
-        downloadRaw(base + f.name, stagingPath, function(err) {
+        downloadRaw(f.url || (base + f.name), stagingPath, function(err) {
             if (err) {
                 log('Download-Fehler (' + f.name + '): ' + err.message + ' – Update abgebrochen');
                 cleanupStaging();
