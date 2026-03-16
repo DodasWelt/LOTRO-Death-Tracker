@@ -280,7 +280,10 @@ exit /b 1
 set "RUNNER_LOG_PATH=%TEMP%\LOTRO-DT-reinstall-runner.log"
 echo [%DATE% %TIME%] Schritt 3: Start Runner: %RUNNER% --runner %STAGING% >> "%REINSTALL_LOG%"
 echo [%DATE% %TIME%] Schritt 3: Runner-Log wird erstellt in: %RUNNER_LOG_PATH% >> "%REINSTALL_LOG%"
-start "LOTRO Death Tracker - Neuinstallation laeuft..." cmd /c "%RUNNER%" --runner "%STAGING%" "%RUNNER_LOG_PATH%"
+timeout /t 1 /nobreak >nul
+echo [%DATE% %TIME%] Schritt 3: Starte Runner... >> "%REINSTALL_LOG%"
+start "LOTRO Death Tracker - Neuinstallation laeuft..." cmd /c ""%RUNNER%" --runner "%STAGING%" "%RUNNER_LOG_PATH%""
+echo [%DATE% %TIME%] Schritt 3: start-Befehl ausgefuehrt >> "%REINSTALL_LOG%"
 echo.
 echo ================================================================
 echo.
