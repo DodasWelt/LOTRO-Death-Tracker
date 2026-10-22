@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Linux Update-Skript
-# Version: 3.0
+# Version: 3.1
 # Aktualisiert eine bestehende Installation.
 
 set -euo pipefail
@@ -13,7 +13,7 @@ err() { echo "[$(date '+%Y-%m-%dT%H:%M:%S')] FEHLER: $*" | tee -a "$LOG" >&2; }
 
 echo ""
 echo "================================================="
-echo " LOTRO Death Tracker - Update (Linux) v3.0"
+echo " LOTRO Death Tracker - Update (Linux) v3.1"
 echo "================================================="
 echo ""
 
@@ -152,7 +152,7 @@ fi
 # Erfolgsmeldung
 echo ""
 echo "================================================="
-echo " Update auf v3.0 abgeschlossen!"
+echo " Update auf v3.1 abgeschlossen!"
 echo "================================================="
 echo ""
 echo "Der Watcher wurde neu gestartet."
@@ -160,7 +160,7 @@ echo ""
 echo "Logs: $INSTALL_DIR/watcher.log"
 echo ""
 if command -v notify-send &>/dev/null; then
-    notify-send "LOTRO Death Tracker" "Update auf v3.0 abgeschlossen!"
+    notify-send "LOTRO Death Tracker" "Update auf v3.1 abgeschlossen!"
 fi
 
 log "Update abgeschlossen."

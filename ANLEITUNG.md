@@ -1,6 +1,6 @@
 # 🎮 LOTRO Death Tracker - Installations-Anleitung
 
-**Version 3.0** | Stand: März 2026
+**Version 3.1** | Stand: Oktober 2026
 
 ---
 
@@ -20,7 +20,7 @@ Du stirbst im Spiel → Plugin erkennt es → Client sendet Daten → Overlay ze
 
 Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt passiert beim Doppelklick auf die BAT-Datei gar nichts.
 
-1. **Rechtsklick** auf `LOTRO-Death-Tracker-v3.0.zip` → **Eigenschaften**
+1. **Rechtsklick** auf `LOTRO-Death-Tracker-v3.1.zip` → **Eigenschaften**
 2. Haken bei **„Zulassen"** setzen → **Übernehmen** → **OK**
 3. ZIP danach entpacken
 
@@ -29,7 +29,7 @@ Windows blockiert heruntergeladene Dateien automatisch. Ohne diesen Schritt pass
 1. **Rechtsklick** auf `INSTALL.bat` → **Eigenschaften** → Haken bei **„Zulassen"** → **OK**
 2. **Rechtsklick** auf `INSTALL.bat` → **Als Administrator ausführen**
 
-Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v3.0 erfolgreich installiert!"**
+Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren, Client einrichten, Autostart konfigurieren). Am Ende erscheint ein Popup: **„LOTRO Death Tracker v3.1 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Der Installer erkennt das und öffnet die Download-Seite automatisch. Nach der Node.js-Installation den PC neu starten und `INSTALL.bat` erneut ausführen.
 
@@ -44,8 +44,10 @@ Der Installer erledigt alles automatisch (LOTRO-Pfad finden, Plugin installieren
 
 Neue Browserquelle in OBS hinzufügen:
 
-**URL:** `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH`
+**URL:** `https://www.dodaswelt.de/wp-json/lotro-deaths/v1/overlay`
 **Breite:** 1920 | **Höhe:** 1080
+
+Alle Teilnehmer nutzen dieselbe URL. Jeder Tod erscheint bei allen gleichzeitig.
 
 ### Schritt 5: Fertig!
 
@@ -58,8 +60,8 @@ Der Client läuft ab sofort unsichtbar im Hintergrund und startet automatisch mi
 ### Schritt 1: ZIP entpacken
 
 ```bash
-unzip LOTRO-Death-Tracker-v3.0.zip
-cd LOTRO-Death-Tracker-v3.0
+unzip LOTRO-Death-Tracker-v3.1.zip
+cd LOTRO-Death-Tracker-v3.1
 ```
 
 ### Schritt 2: INSTALL.sh ausführen
@@ -74,7 +76,7 @@ Der Installer findet deinen LOTRO-Pfad automatisch (Steam native, Steam Flatpak,
 LOTRO_PATH="/pfad/zu/LOTRO" bash INSTALL.sh
 ```
 
-Am Ende erscheint die Meldung: **„LOTRO Death Tracker v3.0 erfolgreich installiert!"**
+Am Ende erscheint die Meldung: **„LOTRO Death Tracker v3.1 erfolgreich installiert!"**
 
 > **Node.js nicht installiert?** Den Paketmanager der Distribution verwenden, z.B. `sudo apt install nodejs npm` (Ubuntu/Debian) oder `sudo pacman -S nodejs npm` (Arch).
 
@@ -89,12 +91,26 @@ Am Ende erscheint die Meldung: **„LOTRO Death Tracker v3.0 erfolgreich install
 
 Neue Browserquelle in OBS hinzufügen:
 
-**URL:** `https://streamelements.com/overlay/699101f20ad2498d64a6c71e/OK0Fv1s0HutgMqmZixPH`
+**URL:** `https://www.dodaswelt.de/wp-json/lotro-deaths/v1/overlay`
 **Breite:** 1920 | **Höhe:** 1080
+
+Alle Teilnehmer nutzen dieselbe URL. Jeder Tod erscheint bei allen gleichzeitig.
 
 ### Schritt 5: Fertig!
 
 Der Client läuft im Hintergrund und startet automatisch mit dem Desktop (XDG Autostart). Deaths und Level-Ups werden ab jetzt automatisch erkannt.
+
+---
+
+## 🔑 Anmeldung & Kennung (ab v3.1)
+
+Nur Charaktere, die Doda angemeldet hat, werden angenommen. Für dich gibt es nichts zu tun:
+beim ersten Tod oder Level-Up holt sich das Programm automatisch eine persönliche Kennung
+und speichert sie als `token.txt` im Installationsordner.
+
+- **REINSTALL** behält die Kennung.
+- Nach **UNINSTALL** oder auf einem **neuen PC** bitte kurz bei Doda melden — er setzt die Kennung zurück, danach holt sich das Programm beim nächsten Tod eine neue.
+- `token.txt` bitte nicht weitergeben.
 
 ---
 
@@ -174,6 +190,13 @@ Melde dich via Discord bei Doda.
    cd ~/.local/share/lotro-death-tracker
    npm run install-service
    ```
+
+### Tode kommen nicht im Overlay an
+
+In `client.log` bzw. `watcher.log` nachsehen:
+- `Server error (403)` → Charakter ist nicht angemeldet. Bei Doda melden (genauer Charaktername).
+- `Server error (401)` → Kennung fehlt oder ist ungültig (z. B. nach Neuinstallation oder neuem PC). Bei Doda melden, er setzt sie zurück.
+- `Server error (429)` → zu viele Anfragen in kurzer Zeit, legt sich nach einer Minute von selbst.
 
 ### Fenster schließt sich sofort (Windows)
 

@@ -1,6 +1,6 @@
 @echo off
 REM LOTRO Death Tracker - Deinstallation
-REM Version: 3.0
+REM Version: 3.1
 title LOTRO Death Tracker - Deinstallation
 
 REM ── Self-Copy-Pattern (CLAUDE.md Hinweis 22) ──────────────────────────────

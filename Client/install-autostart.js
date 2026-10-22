@@ -344,6 +344,7 @@ const VERSION_FILE     = path.join(__dirname, 'version.json');
 const UPDATER_PATH     = path.join(__dirname, 'updater.js');
 const PID_FILE         = path.join(__dirname, 'watcher.pid');
 const LOCAL_DEATHS_FILE = path.join(__dirname, 'deaths.local.json');
+const TOKEN_FILE       = path.join(__dirname, 'token.txt'); // Streamer-Token, geteilt mit client.js
 const WP_API           = 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1';
 
 let clientProcess = null;
@@ -583,14 +584,35 @@ function saveLocalDeaths(data) {
     }
 }
 
+function readAuthToken() {
+    try { return fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch (_) { return ''; }
+}
+
+function saveAuthToken(token) {
+    try {
+        fs.writeFileSync(TOKEN_FILE, token, 'utf8');
+        log('Streamer-Token vom Server erhalten und gespeichert.');
+    } catch (e) {
+        log('Token konnte nicht gespeichert werden: ' + e.message);
+    }
+}
+
 function httpsPostJSON(urlStr, body, cb) {
     var bodyStr = JSON.stringify(body);
     var parsed = new URL(urlStr);
+    var headers = {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+        'User-Agent': 'LOTRO-Death-Tracker-Watcher',
+        'X-LOTRO-Client': getCurrentVersion()
+    };
+    var token = readAuthToken();
+    if (token) headers['X-LOTRO-Token'] = token;
     var req = https.request({
         hostname: parsed.hostname,
         path: parsed.pathname,
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr), 'User-Agent': 'LOTRO-Death-Tracker-Watcher' }
+        headers: headers
     }, function(res) {
         var data = '';
         var statusCode = res.statusCode;
@@ -711,9 +733,11 @@ function syncLocalDeaths() {
                     characterClass: charData ? (charData.characterClass || '') : ''
                 };
                 httpsPostJSON(WP_API + '/death/silent', postBody, function(postErr, result, statusCode) {
+                    if (result && result.authToken) saveAuthToken(result.authToken);
                     if (postErr || !result || !result.success) {
-                        var errMsg = postErr ? postErr.message : JSON.stringify(result);
+                        var errMsg = postErr ? postErr.message : ((result && result.message) || JSON.stringify(result));
                         if (statusCode === 404) errMsg += ' (WordPress-Plugin v2.4 benoetigt – bitte WP-Plugin aktualisieren)';
+                        if (statusCode === 401 || statusCode === 403) errMsg += ' (HTTP ' + statusCode + ')';
                         log('syncLocalDeaths [' + charName + ']: Nachtragen fehlgeschlagen: ' + errMsg);
                     } else {
                         log('syncLocalDeaths [' + charName + ']: ' + result.inserted + ' Tode nachgetragen.');

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Saubere Neuinstallation via GitHub (Linux)
-# Version: 3.0
+# Version: 3.1
 # Laedt die neueste Version von GitHub und installiert komplett neu.
 
 # ── Runner-Check (CLAUDE.md Hinweis 23 - Linux) ──────────────────────────────
@@ -77,6 +77,13 @@ if [[ "${1:-}" == "--runner" ]]; then
     echo "[$(date '+%Y-%m-%dT%H:%M:%S')] Runner 3: PLUGIN_REMOVED=$PLUGIN_REMOVED" >> "$RUNNER_LOG"
     echo "  - Plugin entfernt (gefunden: $PLUGIN_REMOVED)"
 
+    # Streamer-Token sichern (REINSTALL behaelt ihn, UNINSTALL entfernt ihn)
+    TOKEN_KEPT=0
+    if [ -f "$INSTALL_DIR/token.txt" ] && cp "$INSTALL_DIR/token.txt" "$STAGING/token.txt.keep"; then
+        TOKEN_KEPT=1
+    fi
+    echo "[$(date '+%Y-%m-%dT%H:%M:%S')] Runner: Token gesichert=$TOKEN_KEPT" >> "$RUNNER_LOG"
+
     # Runner-Schritt 4: Installationsverzeichnis loeschen
     echo "[4/4] Loesche altes Installationsverzeichnis..."
     if [ -d "$INSTALL_DIR" ]; then
@@ -103,6 +110,13 @@ if [[ "${1:-}" == "--runner" ]]; then
         fi
         rm -f "$0"
         exit 1
+    fi
+
+    # Streamer-Token vor INSTALL.sh zurueckspielen, damit der neue Watcher ihn sofort nutzt
+    if [ "$TOKEN_KEPT" = "1" ]; then
+        mkdir -p "$INSTALL_DIR"
+        cp "$STAGING/token.txt.keep" "$INSTALL_DIR/token.txt"
+        echo "[$(date '+%Y-%m-%dT%H:%M:%S')] Runner: Token wiederhergestellt" >> "$RUNNER_LOG"
     fi
 
     bash "$STAGING_INNER/INSTALL.sh"

@@ -11,7 +11,7 @@
 --        Datenformat (kein externer Netzwerkzugriff aus diesem Script heraus).
 --
 -- Autor:   DodasWelt / Herrin Inge (https://www.dodaswelt.de)
--- Version: 3.0
+-- Version: 3.1
 -- Lizenz:  Keine schaedlichen Aktionen. Offen einsehbarer Quellcode.
 -- =============================================================================
 
@@ -25,7 +25,7 @@ DeathTracker = {};
 -- Configuration
 DeathTracker.Config = {
     pluginName = "DeathTracker",
-    version = "3.0",
+    version = "3.1",
     logFileName = "event_log.json",
     lastDeathWasLogged = false,
     isPlayerDead = false,

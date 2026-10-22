@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LOTRO Death Overlay</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            background: transparent;
+            font-family: 'Cinzel', serif;
+        }
+
+        /* ============================================
+           MINIMALIST OVERLAY - NO BACKGROUND
+           ============================================ */
+
+        .death-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            opacity: 0;
+            transition: all 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 1000;
+            text-align: center;
+        }
+
+        .death-overlay.show {
+            transform: translate(-50%, -50%) scale(1);
+            opacity: 1;
+        }
+
+        /* Logo */
+        .logo {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 30px;
+            animation: logoGlow 2s ease-in-out infinite;
+        }
+
+        .logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+        }
+
+        @keyframes logoGlow {
+            0%, 100% {
+                filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.8));
+            }
+            50% {
+                filter: drop-shadow(0 0 35px rgba(212, 175, 55, 1));
+            }
+        }
+
+        /* Title - GEFALLEN */
+        .title {
+            font-size: 4em;
+            font-weight: 900;
+            color: #d4af37;
+            text-shadow:
+                0 0 30px rgba(212, 175, 55, 0.9),
+                0 0 60px rgba(212, 175, 55, 0.5),
+                3px 3px 8px rgba(0, 0, 0, 0.9);
+            margin-bottom: 25px;
+            letter-spacing: 8px;
+            animation: titlePulse 2s ease-in-out infinite;
+        }
+
+        @keyframes titlePulse {
+            0%, 100% {
+                text-shadow:
+                    0 0 30px rgba(212, 175, 55, 0.9),
+                    0 0 60px rgba(212, 175, 55, 0.5),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+            50% {
+                text-shadow:
+                    0 0 40px rgba(212, 175, 55, 1),
+                    0 0 80px rgba(212, 175, 55, 0.7),
+                    3px 3px 8px rgba(0, 0, 0, 0.9);
+            }
+        }
+
+        /* Character Name */
+        .character-name {
+            font-size: 2.5em;
+            font-weight: 700;
+            color: #f5e6d3;
+            text-shadow:
+                0 0 20px rgba(245, 230, 211, 0.6),
+                3px 3px 6px rgba(0, 0, 0, 0.9);
+            margin-bottom: 15px;
+            letter-spacing: 3px;
+        }
+
+        /* Character Level */
+        .character-level {
+            font-size: 1.8em;
+            color: #d4af37;
+            font-weight: 600;
+            text-shadow:
+                0 0 15px rgba(212, 175, 55, 0.6),
+                2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+            margin-bottom: 12px;
+        }
+
+        /* Death Count */
+        .death-count {
+            font-size: 1.2em;
+            color: #c0a080;
+            font-weight: 400;
+            text-shadow:
+                2px 2px 4px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+        }
+
+        /* Entrance animation */
+        @keyframes fadeInScale {
+            from {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+            to {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+        }
+
+        /* Exit animation */
+        @keyframes fadeOutScale {
+            from {
+                transform: translate(-50%, -50%) scale(1);
+                opacity: 1;
+            }
+            to {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0;
+            }
+        }
+
+        /* Test-Modus (?test=1) */
+        .test-badge {
+            display: none;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 8px 18px;
+            background: rgba(180, 30, 30, 0.85);
+            color: #fff;
+            font-size: 1.4em;
+            font-weight: 700;
+            letter-spacing: 4px;
+            border-radius: 6px;
+        }
+
+        body.test-mode .test-badge {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-badge">TEST</div>
+
+    <div class="death-overlay" id="deathOverlay">
+        <!-- Logo -->
+        <div class="logo">
+            <img src="" id="logoImage" alt="Logo">
+        </div>
+
+        <!-- Title -->
+        <div class="title">GEFALLEN</div>
+
+        <!-- Character Info -->
+        <div class="character-name" id="characterName">...</div>
+        <div class="character-level" id="characterLevel">Level ...</div>
+        <div class="death-count" id="deathCount">... Mal gestorben</div>
+    </div>
+
+    <!-- Audio element – src is set dynamically before each play -->
+    <audio id="deathSound" preload="none"></audio>
+
+    <script>
+        // ============================================
+        // LOTRO Death Overlay (ab v3.1)
+        // Eine URL für alle Streamer, als OBS-Browser-Quelle (1920×1080):
+        //   https://www.dodaswelt.de/wp-json/lotro-deaths/v1/overlay
+        // Test-Modus: ...?test=1  (Test-Tabellen, TEST-Badge, ohne Sound; mit &sound=1 mit Sound)
+        //
+        // Der Server legt für jeden Tod einen Sendeplatz fest (showAt). Alle Overlays
+        // gleichen ihre Uhr mit der Serverzeit ab und zeigen denselben Tod im selben
+        // Moment. Das Overlay quittiert nichts – es ist zustandslos und erholt sich
+        // nach Schlafen/Neustart von selbst.
+        // ============================================
+
+        const CONFIG = {
+            // Fallback, wenn die Seite nicht vom WordPress-Plugin ausgeliefert wird (z. B. lokale Datei)
+            DEFAULT_API_URL: 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1',
+
+            // Abfrage-Intervall (ms). Der Server plant Sendeplätze mit 4 s Vorlauf.
+            CHECK_INTERVAL: 2000,
+
+            // Anzeigedauer (ms) – wird auf den Sendeplatz des Servers begrenzt
+            DISPLAY_DURATION: 10000,
+
+            // Wer später dazukommt, zeigt den laufenden Tod nur, wenn noch so viel übrig ist (ms)
+            MIN_REMAINING_MS: 3000,
+
+            // Sound nur, wenn die Anzeige höchstens so spät nach Sendebeginn startet (ms)
+            SOUND_MAX_LATE_MS: 2000,
+
+            LOGO_URL: 'https://herrin-inge.de/logo.png',
+
+            // Normaler Tod
+            SOUND_URL: 'https://www.dodaswelt.de/lotro/Trauerlied_1.mp3',
+
+            // Meilenstein (5., 10., 15. … Tod): zufällig einer davon
+            ALERT_SOUND_URLS: [
+                'https://www.dodaswelt.de/lotro/Alert_1.mp3',
+                'https://www.dodaswelt.de/lotro/Alert_2.mp3',
+            ],
+
+            SOUND_VOLUME: 0.7,
+        };
+
+        // ============================================
+        // OVERLAY LOGIC - DO NOT EDIT BELOW
+        // ============================================
+
+        const params    = new URLSearchParams(location.search);
+        const TEST_MODE = params.get('test') === '1';
+        const SOUND_ON  = !TEST_MODE || params.get('sound') === '1';
+
+        // API-Basis aus der eigenen URL ableiten (Overlay wird vom Plugin ausgeliefert)
+        function resolveApiBase() {
+            if (params.get('api')) return params.get('api').replace(/\/$/, '');
+            if (location.protocol === 'http:' || location.protocol === 'https:') {
+                const i = location.pathname.indexOf('/wp-json/lotro-deaths/v1');
+                if (i >= 0) return location.origin + location.pathname.slice(0, i) + '/wp-json/lotro-deaths/v1';
+                const restRoute = params.get('rest_route') || '';
+                if (restRoute.indexOf('/lotro-deaths/v1') === 0) {
+                    return location.origin + location.pathname + '?rest_route=/lotro-deaths/v1';
+                }
+            }
+            return CONFIG.DEFAULT_API_URL;
+        }
+
+        const API_BASE    = resolveApiBase() + (TEST_MODE ? '/test' : '');
+        const CURRENT_URL = API_BASE + '/death/current';
+
+        let slotMs     = 13000;
+        let isPolling  = false;
+        let hideTimer  = null;
+        const scheduled = new Map(); // death id → Timeout-Handle (null = verpasst/erledigt)
+
+        // ── Uhrabgleich: Offset aus der Probe mit der kürzesten Laufzeit ──
+        const clockSamples = [];
+        let clockOffset = 0;
+
+        function addClockSample(serverTime, t0, t1) {
+            clockSamples.push({ rtt: t1 - t0, offset: serverTime - (t0 + t1) / 2 });
+            if (clockSamples.length > 15) clockSamples.shift();
+            let best = clockSamples[0];
+            for (const s of clockSamples) if (s.rtt < best.rtt) best = s;
+            clockOffset = best.offset;
+        }
+
+        function initializeLogo() {
+            const logoImage = document.getElementById('logoImage');
+            if (CONFIG.LOGO_URL && CONFIG.LOGO_URL.trim() !== '') {
+                logoImage.src = CONFIG.LOGO_URL;
+            }
+        }
+
+        /**
+         * Meilenstein-Tode (5., 10., 15., …): zufällig Alert_1 oder Alert_2,
+         * sonst SOUND_URL (Trauerlied).
+         */
+        function playDeathSound(deathCount) {
+            if (!SOUND_ON) return;
+            const audio = document.getElementById('deathSound');
+            let soundUrl = CONFIG.SOUND_URL;
+            if (deathCount && deathCount % 5 === 0 && CONFIG.ALERT_SOUND_URLS.length > 0) {
+                soundUrl = CONFIG.ALERT_SOUND_URLS[Math.floor(Math.random() * CONFIG.ALERT_SOUND_URLS.length)];
+            }
+            if (!soundUrl) return;
+            audio.src = soundUrl;
+            audio.volume = Math.max(0, Math.min(1, CONFIG.SOUND_VOLUME));
+            audio.currentTime = 0;
+            audio.play().catch(error => console.error('[SOUND] Abspielen fehlgeschlagen:', error));
+        }
+
+        function hideOverlay() {
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = null;
+            document.getElementById('deathOverlay').classList.remove('show');
+        }
+
+        function showDeath(death, startLocal, endLocal) {
+            document.getElementById('characterName').textContent  = death.characterName;
+            document.getElementById('characterLevel').textContent = `Level ${death.level}`;
+            document.getElementById('deathCount').textContent     = `${death.deathCount} Mal gestorben`;
+            document.getElementById('deathOverlay').classList.add('show');
+
+            if (Date.now() - startLocal <= CONFIG.SOUND_MAX_LATE_MS) {
+                playDeathSound(death.deathCount);
+            }
+            console.log(`[DISPLAY] Tod #${death.deathCount} von ${death.characterName} (Level ${death.level})`);
+
+            if (hideTimer) clearTimeout(hideTimer);
+            hideTimer = setTimeout(hideOverlay, Math.max(0, endLocal - Date.now()));
+        }
+
+        function scheduleSlot(death) {
+            if (scheduled.has(death.id) || typeof death.showAt !== 'number') return;
+
+            const displayMs  = Math.min(CONFIG.DISPLAY_DURATION, slotMs - 1000);
+            const startLocal = death.showAt - clockOffset;
+            const endLocal   = startLocal + displayMs;
+            const now        = Date.now();
+
+            if (endLocal - now < CONFIG.MIN_REMAINING_MS) {
+                scheduled.set(death.id, null); // verpasst – nicht nachholen
+                return;
+            }
+            scheduled.set(death.id, setTimeout(() => {
+                scheduled.set(death.id, null);
+                showDeath(death, startLocal, endLocal);
+            }, Math.max(0, startLocal - now)));
+
+            // Alte Einträge vergessen
+            if (scheduled.size > 50) {
+                const oldest = scheduled.keys().next().value;
+                clearTimeout(scheduled.get(oldest));
+                scheduled.delete(oldest);
+            }
+        }
+
+        async function poll() {
+            if (isPolling) return;
+            isPolling = true;
+            try {
+                const t0 = Date.now();
+                const response = await fetch(CURRENT_URL, { cache: 'no-store' });
+                const data = await response.json();
+                const t1 = Date.now();
+
+                if (typeof data.serverTime === 'number') addClockSample(data.serverTime, t0, t1);
+                if (typeof data.slotMs === 'number') slotMs = data.slotMs;
+                (data.upcoming || []).forEach(scheduleSlot);
+            } catch (error) {
+                console.error('[ERROR] Abfrage fehlgeschlagen:', error);
+            } finally {
+                isPolling = false;
+            }
+        }
+
+        function init() {
+            if (TEST_MODE) document.body.classList.add('test-mode');
+            console.log('[INIT] LOTRO Death Overlay – API:', API_BASE, TEST_MODE ? '(TEST)' : '');
+            initializeLogo();
+            setInterval(poll, CONFIG.CHECK_INTERVAL);
+            poll();
+        }
+
+        // Nach Suspend der Browser-Quelle sofort neu abfragen. Bereits geplante
+        // Timeouts bleiben gültig, weil sie auf absoluten Zeitpunkten beruhen.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') poll();
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('[ERROR] Unbehandelte Promise-Ablehnung:', event.reason);
+            isPolling = false;
+        });
+
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

@@ -31,3 +31,6 @@ version.json
 
 # Veraltete Dokumentation
 LOTRO-Death-Tracker-COMPLETE-SUMMARY.md
+
+# Lokale WP-Testumgebung (run-tests.sh kopiert das Plugin hierhin)
+WordPress/tests/.plugin/

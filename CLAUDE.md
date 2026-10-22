@@ -28,8 +28,8 @@ LOTRO Death Tracker — automatisches Death & Level-Up Tracking für Lord of the
 | `Client/` | Node.js Client (Watcher, Installer, Updater) | `C:\LOTRO-Death-Tracker\` auf Streamer-PC |
 | `LOTRO-Plugin/` | Lua Plugin für LOTRO | `Documents\...\Plugins\DodasWelt\` |
 | `WordPress/lotro-death-tracker.php` | WordPress REST API Plugin | `dodaswelt.de` WP-Plugin-Verzeichnis |
-| `Overlay/streamelements-overlay-minimalist.html` | Stream-Overlay (Prod) | StreamElements Custom Widget |
-| `Overlay/streamelements-overlay-test.html` | Test-Overlay (lokal öffenbar) | Lokaler Browser / OBS (nur für Tests) |
+| `Overlay/lotro-death-overlay.html` | Stream-Overlay (ab 3.1, Sendeplan, Test via `?test=1`) | Im WP-Plugin-ZIP als `overlay.html`, ausgeliefert unter `/wp-json/lotro-deaths/v1/overlay` (OBS-Browser-Source) |
+| `Overlay/streamelements-overlay-minimalist.html` | Altes Overlay (veraltet, nur Übergang) | StreamElements Custom Widget |
 | `Website/lotro-data-fetcher.js` | JS-Bibliothek für Website-Integration | `herrin-inge.de` via jsDelivr CDN |
 | `INSTALL.bat` / `INSTALL.sh` | Erstinstallation (Windows / Linux) | Im Distributions-ZIP |
 | `UPDATE.bat` / `UPDATE.sh` | Upgrade für bestehende Nutzer | Im Distributions-ZIP |
@@ -84,11 +84,13 @@ LOTRO (Spiel)
   client.js (Node.js, chokidar file watcher)
        │  parseLuaTable() → extrahiert JSON-String aus "content" Feld
        │  Setzt echte Systemzeit (de-DE Locale) statt "TIMESTAMP"
-       │  axios.post(...)
+       │  axios.post(...) mit X-LOTRO-Client + X-LOTRO-Token (token.txt)
        ▼
   WordPress API (https://www.dodaswelt.de/wp-json/lotro-deaths/v1/)
+       │  nur gemappte Charaktere; Token-Prüfung; vergibt Sendeplatz (show_at_ms)
        ▼
-  StreamElements Overlay (pollt /current alle 3 Sekunden)
+  Overlay /overlay als OBS-Browser-Source (pollt /death/current alle 2 s,
+  gleicht Uhr per serverTime ab → alle Streamer zeigen denselben Tod gleichzeitig)
 ```
 
 ### Komponenten & Dateipfade
@@ -155,6 +157,7 @@ Quelle: LotroCompanion/lotro-data — **noch nicht live in-game verifiziert**. F
 ### Duplikat-Schutz
 
 Client: `syncData.lastUpdate > lastProcessedTimestamp` — überspringt bereits verarbeitete Events.
+Server (ab 3.1): Absicherung über Streamer-Token, Mapping-Pflicht, Rate-Limit und Feldlimits → Details `WordPress/CLAUDE.md` Abschnitt „Absicherung".
 Plugin: `isPlayerDead`-Flag + `lastDeathWasLogged`-Flag — wird erst bei Revive (Morale > 0) zurückgesetzt.
 
 ### Timestamps
@@ -227,6 +230,7 @@ cp -r Client LOTRO-Plugin INSTALL.bat UPDATE.bat UNINSTALL.bat REINSTALL.bat INS
 python3 -c "import shutil; shutil.make_archive('LOTRO-Death-Tracker-vX.Y', 'zip', '.', 'LOTRO-Death-Tracker-vX.Y')"
 mkdir -p lotro-death-tracker
 cp WordPress/lotro-death-tracker.php lotro-death-tracker/
+cp Overlay/lotro-death-overlay.html lotro-death-tracker/overlay.html   # PFLICHT ab 3.1
 python3 -c "import shutil; shutil.make_archive('lotro-death-tracker', 'zip', '.', 'lotro-death-tracker')"
 gh release create vX.Y --title "vX.Y – ..." --notes "..." LOTRO-Death-Tracker-vX.Y.zip lotro-death-tracker.zip
 gh release edit vX.Y --latest   # PFLICHT!
@@ -282,4 +286,5 @@ Bei jedem Release alle Versionsnummern synchron halten:
 | `REINSTALL.sh` Version-Kommentar | auf `X.Y` setzen |
 | Git-Tag | `vX.Y` |
 
-> **Aktueller Stand:** Code-Stand ist **v3.0** (in Entwicklung). Letzter GitHub-Release: **v2.7** (released 2026-03-13).
+> **Aktueller Stand:** Code-Stand ist **v3.1** (REST-Absicherung, Streamer-Token, Admin-Seite, Overlay-Sendeplan; Oktober 2026). Letzter GitHub-Release: **v3.0** (2026-03-16).
+> **Rollout v3.1:** Client-Release zunächst nur als **Pre-Release** (kein Auto-Update/Dialog bei Streamern, da `/releases/latest` Pre-Releases ignoriert). WP-Plugin 3.1 lädt Michael manuell per ZIP hoch. Zur nächsten Season: Pre-Release → `latest`, danach Streamer anlegen (7-Tage-Abholfenster).

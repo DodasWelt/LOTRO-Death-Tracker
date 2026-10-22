@@ -2,8 +2,8 @@
 /**
  * Plugin Name: LOTRO Death Tracker API
  * Plugin URI: https://dodaswelt.de
- * Description: Provides API endpoints for LOTRO death tracking and StreamElements integration
- * Version: 3.0
+ * Description: Provides API endpoints for LOTRO death tracking, the stream overlay and streamer administration
+ * Version: 3.1
  * Author: DodasWelt
  * Author URI: https://dodaswelt.de
  * License: GPL v2 or later
@@ -18,15 +18,31 @@ class LOTRO_Death_Tracker {
     private $table_deaths;
     private $table_characters;
     private $table_mapping;
+    private $table_streamers;
     private $table_deaths_test;
     private $table_characters_test;
-    private $db_version = '2.1';
+    private $db_version = '2.2';
+
+    // Token-Abholfenster nach Anlegen/Zurücksetzen eines Streamers
+    const CLAIM_DAYS = 7;
+    // Overlay-Sendeplan: Länge eines Sendeplatzes, davon sichtbare Anzeige, Vorlauf
+    const SLOT_MS    = 13000;
+    const DISPLAY_MS = 10000;
+    const LEAD_MS    = 4000;
+    // Missbrauchsschutz
+    const SILENT_MAX_COUNT = 20;
+    const RATE_LIMIT_EVENTS = 30; // pro IP und Minute (POST /death)
+    const RATE_LIMIT_SILENT = 5;  // pro IP und Minute (POST /death/silent)
+
+    // Ergebnis von check_client_permission() für den nachfolgenden Handler
+    private $auth_context = null;
 
     public function __construct() {
         global $wpdb;
         $this->table_deaths           = $wpdb->prefix . 'lotro_deaths';
         $this->table_characters       = $wpdb->prefix . 'lotro_characters';
         $this->table_mapping          = $wpdb->prefix . 'lotro_streamer_mapping';
+        $this->table_streamers        = $wpdb->prefix . 'lotro_streamers';
         $this->table_deaths_test      = $wpdb->prefix . 'lotro_deaths_test';
         $this->table_characters_test  = $wpdb->prefix . 'lotro_characters_test';
 
@@ -36,6 +52,8 @@ class LOTRO_Death_Tracker {
         add_action('init',                                    array($this, 'add_cors_headers'));
         add_filter('pre_set_site_transient_update_plugins',   array($this, 'check_for_update'));
         add_filter('plugins_api',                             array($this, 'plugin_info'), 20, 3);
+        add_action('admin_menu',                              array($this, 'register_admin_page'));
+        add_action('admin_post_lotro_dt',                     array($this, 'handle_admin_action'));
     }
 
     // -------------------------------------------------------------------------
@@ -79,10 +97,12 @@ class LOTRO_Death_Tracker {
             received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             processed TINYINT(1) DEFAULT 0,
             shown_at DATETIME NULL,
+            show_at_ms BIGINT(20) NULL,
             PRIMARY KEY  (id),
             INDEX idx_processed (processed),
             INDEX idx_timestamp (timestamp),
-            INDEX idx_character (character_name)
+            INDEX idx_character (character_name),
+            INDEX idx_show_at (show_at_ms)
         ) $charset_collate;";
 
         // Characters – tracks current level and cumulative death count
@@ -111,10 +131,25 @@ class LOTRO_Death_Tracker {
             UNIQUE KEY uk_character (character_name)
         ) $charset_collate;";
 
+        // Streamers – one row per participant; holds the per-installation client token.
+        // token_hash = SHA-256 of the token (plaintext is never stored).
+        $sql_streamers = "CREATE TABLE IF NOT EXISTS {$this->table_streamers} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            twitch_username VARCHAR(100) NOT NULL,
+            display_name VARCHAR(100) DEFAULT NULL,
+            token_hash CHAR(64) DEFAULT NULL,
+            token_claimed_at DATETIME NULL,
+            claim_until DATETIME NULL,
+            token_last_used DATETIME NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY uk_twitch (twitch_username)
+        ) $charset_collate;";
+
         // Test tables – same schema, different names (no data migration, no mapping table)
         $sql_deaths_test = str_replace(
-            array($this->table_deaths, 'INDEX idx_processed', 'INDEX idx_timestamp', 'INDEX idx_character'),
-            array($this->table_deaths_test, 'INDEX idx_t_processed', 'INDEX idx_t_timestamp', 'INDEX idx_t_character'),
+            array($this->table_deaths, 'INDEX idx_processed', 'INDEX idx_timestamp', 'INDEX idx_character', 'INDEX idx_show_at'),
+            array($this->table_deaths_test, 'INDEX idx_t_processed', 'INDEX idx_t_timestamp', 'INDEX idx_t_character', 'INDEX idx_t_show_at'),
             $sql_deaths
         );
         $sql_characters_test = str_replace(
@@ -125,6 +160,7 @@ class LOTRO_Death_Tracker {
         dbDelta($sql_deaths);
         dbDelta($sql_characters);
         dbDelta($sql_mapping);
+        dbDelta($sql_streamers);
         dbDelta($sql_deaths_test);
         dbDelta($sql_characters_test);
 
@@ -138,6 +174,7 @@ class LOTRO_Death_Tracker {
             if (!in_array('death_count', $cols))     { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `death_count` INT NOT NULL DEFAULT 0 AFTER `event_type`"); }
             if (!in_array('race', $cols))            { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `race` VARCHAR(100) DEFAULT NULL AFTER `region`"); }
             if (!in_array('character_class', $cols)) { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `character_class` VARCHAR(100) DEFAULT NULL AFTER `race`"); }
+            if (!in_array('show_at_ms', $cols))      { $wpdb->query("ALTER TABLE {$_tbl} ADD COLUMN `show_at_ms` BIGINT(20) NULL AFTER `shown_at`, ADD INDEX idx_show_at (show_at_ms)"); }
         }
 
         foreach (array($this->table_characters, $this->table_characters_test) as $_tbl) {
@@ -179,6 +216,27 @@ class LOTRO_Death_Tracker {
             ");
             update_option('lotro_death_tracker_data_migration', '1');
         }
+
+        // v3.1 (einmalig): Streamer aus der bisherigen Mapping-Tabelle übernehmen und
+        // Alt-Einträge der früheren Quittier-Queue als gezeigt markieren (ohne Sendeplatz
+        // würden sie sonst nie angezeigt und nie in der History landen).
+        if (get_option('lotro_death_tracker_streamer_migration', '0') !== '1') {
+            $claim_until = $this->claim_deadline();
+            $wpdb->query($wpdb->prepare(
+                "INSERT IGNORE INTO {$this->table_streamers} (twitch_username, display_name, claim_until)
+                 SELECT twitch_username, display_name, %s FROM {$this->table_mapping}",
+                $claim_until
+            ));
+            $wpdb->query($wpdb->prepare(
+                "INSERT IGNORE INTO {$this->table_characters} (character_name, current_level, total_deaths, race, character_class, last_seen)
+                 SELECT character_name, 0, 0, race, character_class, %s FROM {$this->table_mapping}",
+                current_time('mysql')
+            ));
+            foreach (array($this->table_deaths, $this->table_deaths_test) as $_tbl) {
+                $wpdb->query("UPDATE {$_tbl} SET processed = 1, shown_at = NOW() WHERE processed = 0 AND show_at_ms IS NULL");
+            }
+            update_option('lotro_death_tracker_streamer_migration', '1');
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -199,7 +257,7 @@ class LOTRO_Death_Tracker {
         $response = wp_remote_get(
             'https://api.github.com/repos/DodasWelt/LOTRO-Death-Tracker/releases/latest',
             array(
-                'headers' => array('User-Agent' => 'LOTRO-Death-Tracker-WP/3.0'),
+                'headers' => array('User-Agent' => 'LOTRO-Death-Tracker-WP/3.1'),
                 'timeout' => 10,
             )
         );
@@ -321,7 +379,7 @@ class LOTRO_Death_Tracker {
 
         header("Access-Control-Allow-Origin: *");
         header("Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS");
-        header("Access-Control-Allow-Headers: Content-Type, Authorization");
+        header("Access-Control-Allow-Headers: Content-Type, Authorization, X-LOTRO-Token, X-LOTRO-Client");
 
         if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
             status_header(200);
@@ -336,38 +394,33 @@ class LOTRO_Death_Tracker {
     public function register_routes() {
         $ns = 'lotro-deaths/v1';
 
-        // Node.js client submits death or levelup events here
+        // Node.js client submits death or levelup events here [Streamer-Token]
         register_rest_route($ns, '/death', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_submit_event'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_client_permission'),
         ));
 
-        // StreamElements overlay: fetch the current (oldest unprocessed) death
+        // Overlay polls this for the current/upcoming broadcast slot
         register_rest_route($ns, '/death/current', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'api_get_current_death'),
             'permission_callback' => '__return_true',
         ));
 
-        // StreamElements overlay: mark current death as shown and get next
+        // Deprecated since 3.1 (slot schedule replaces acknowledging). Kept as a
+        // harmless no-op so the old StreamElements overlay keeps working.
         register_rest_route($ns, '/death/next', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_get_next_death'),
             'permission_callback' => '__return_true',
         ));
 
-        // Watcher: silently insert missed deaths (processed=1, never shown in overlay)
+        // Watcher back-fills deaths that happened while the client was offline [Streamer-Token]
         register_rest_route($ns, '/death/silent', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_submit_silent'),
-            'permission_callback' => '__return_true',
-        ));
-
-        register_rest_route($ns, '/queue', array(
-            'methods'             => 'GET',
-            'callback'            => array($this, 'api_get_queue'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_client_permission'),
         ));
 
         register_rest_route($ns, '/history', array(
@@ -376,7 +429,7 @@ class LOTRO_Death_Tracker {
             'permission_callback' => '__return_true',
         ));
 
-        // Per-character stats (used by lotro-data-fetcher.js)
+        // All characters with current level and death statistics
         register_rest_route($ns, '/characters', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'api_get_characters'),
@@ -389,14 +442,21 @@ class LOTRO_Death_Tracker {
             'permission_callback' => '__return_true',
         ));
 
-        // Streamer stats for herrin-inge.de: all mapped streamers with current LOTRO data
+        // Stream overlay (HTML) – one URL for all streamers, used as OBS browser source
+        register_rest_route($ns, '/overlay', array(
+            'methods'             => 'GET',
+            'callback'            => array($this, 'api_serve_overlay'),
+            'permission_callback' => '__return_true',
+        ));
+
+        // Streamer mapping – public read for herrin-inge.de
         register_rest_route($ns, '/streamers', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'api_get_streamers'),
             'permission_callback' => '__return_true',
         ));
 
-        // Manage the Twitch-username → character-name mapping (requires WP admin or Application Password)
+        // Streamer mapping – write operations require WP admin login or Application Password
         register_rest_route($ns, '/streamers/mapping', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_set_mapping'),
@@ -409,38 +469,267 @@ class LOTRO_Death_Tracker {
             'permission_callback' => array($this, 'check_admin_permission'),
         ));
 
-        // ── Test-Modus: schreibt in _test-Tabellen, liest aus _test-Tabellen ──
-        // Kein Streamer-Filter; kein Mapping. Ideal für End-to-End-Tests ohne
-        // Produktionsdaten zu berühren.
+        // ── Test-Endpunkte: nur aktiv, wenn im WP-Admin der Testmodus eingeschaltet ist.
+        // Schreiben in _test-Tabellen; Streamer, Mapping und Tokens sind die echten.
         register_rest_route($ns, '/test/death', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_test_submit_event'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_test_client_permission'),
         ));
         register_rest_route($ns, '/test/death/current', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'api_test_get_current_death'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_test_mode'),
         ));
         register_rest_route($ns, '/test/death/next', array(
             'methods'             => 'POST',
             'callback'            => array($this, 'api_test_get_next_death'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_test_mode'),
         ));
-        register_rest_route($ns, '/test/queue', array(
-            'methods'             => 'GET',
-            'callback'            => array($this, 'api_test_get_queue'),
-            'permission_callback' => '__return_true',
+        register_rest_route($ns, '/test/death/silent', array(
+            'methods'             => 'POST',
+            'callback'            => array($this, 'api_test_submit_silent'),
+            'permission_callback' => array($this, 'check_test_client_permission'),
         ));
         register_rest_route($ns, '/test/health', array(
             'methods'             => 'GET',
             'callback'            => array($this, 'api_test_health_check'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_test_mode'),
         ));
         register_rest_route($ns, '/test/clear', array(
             'methods'             => 'DELETE',
             'callback'            => array($this, 'api_test_clear'),
             'permission_callback' => array($this, 'check_admin_permission'),
+        ));
+    }
+
+    // -------------------------------------------------------------------------
+    // Security: client token, rate limit, input limits
+    // -------------------------------------------------------------------------
+
+    /**
+     * Cloudflare edge ranges (https://www.cloudflare.com/ips/). Only when a request
+     * arrives from one of these is the CF-Connecting-IP header trusted – otherwise
+     * anyone could spoof it to dodge the rate limit.
+     */
+    private static $cloudflare_ranges = array(
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+    );
+
+    public static function ip_in_cidr($ip, $cidr) {
+        list($subnet, $bits) = explode('/', $cidr);
+        $ip_bin     = @inet_pton($ip);
+        $subnet_bin = @inet_pton($subnet);
+        if ($ip_bin === false || $subnet_bin === false || strlen($ip_bin) !== strlen($subnet_bin)) {
+            return false;
+        }
+        $bits  = intval($bits);
+        $bytes = intdiv($bits, 8);
+        if (substr($ip_bin, 0, $bytes) !== substr($subnet_bin, 0, $bytes)) {
+            return false;
+        }
+        $rest = $bits % 8;
+        if ($rest === 0) {
+            return true;
+        }
+        $mask = (0xFF << (8 - $rest)) & 0xFF;
+        return (ord($ip_bin[$bytes]) & $mask) === (ord($subnet_bin[$bytes]) & $mask);
+    }
+
+    public static function resolve_client_ip($remote_addr, $cf_connecting_ip) {
+        if ($cf_connecting_ip !== '' && @inet_pton($cf_connecting_ip) !== false) {
+            foreach (self::$cloudflare_ranges as $range) {
+                if (self::ip_in_cidr($remote_addr, $range)) {
+                    return $cf_connecting_ip;
+                }
+            }
+        }
+        return $remote_addr;
+    }
+
+    private function get_client_ip() {
+        return self::resolve_client_ip(
+            (string) ($_SERVER['REMOTE_ADDR'] ?? ''),
+            trim((string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''))
+        );
+    }
+
+    /**
+     * Simple fixed-window limiter per IP and bucket via WP transients.
+     */
+    private function check_rate_limit($bucket, $limit) {
+        $key  = 'lotro_rl_' . md5($bucket . '|' . $this->get_client_ip());
+        $hits = intval(get_transient($key));
+        if ($hits >= $limit) {
+            return new WP_Error('rate_limited', 'Zu viele Anfragen – bitte kurz warten.', array('status' => 429));
+        }
+        set_transient($key, $hits + 1, MINUTE_IN_SECONDS);
+        return true;
+    }
+
+    /** sanitize_text_field + hard length limit (DB columns are larger, but nothing legit is longer). */
+    public static function clip($value, $max) {
+        return mb_substr(sanitize_text_field((string) $value), 0, $max);
+    }
+
+    /** End of the token claim window, counted from now (WP timezone, MySQL format). */
+    private function claim_deadline() {
+        return wp_date('Y-m-d H:i:s', time() + self::CLAIM_DAYS * DAY_IN_SECONDS);
+    }
+
+    /**
+     * permission_callback for POST /death and /death/silent.
+     *
+     * – Character not mapped to a streamer          → 403
+     * – Streamer has a token                         → X-LOTRO-Token must match (401 otherwise)
+     * – No token yet, client ≥ 3.1 (X-LOTRO-Client)  → allowed if the claim window is open;
+     *                                                  the handler then issues the token.
+     *                                                  Window expired → allowed without token while
+     *                                                  "Alte Clients zulassen" is on, else 401
+     * – No token yet, old client without header      → allowed while "Alte Clients zulassen" is on
+     */
+    public function check_client_permission($request) {
+        global $wpdb;
+        $this->auth_context = null;
+
+        $is_silent = substr($request->get_route(), -7) === '/silent';
+        $limited   = $is_silent
+            ? $this->check_rate_limit('silent', self::RATE_LIMIT_SILENT)
+            : $this->check_rate_limit('event', self::RATE_LIMIT_EVENTS);
+        if (is_wp_error($limited)) {
+            return $limited;
+        }
+
+        $params         = $request->get_json_params();
+        $character_name = self::clip($params['characterName'] ?? '', 64);
+        if ($character_name === '') {
+            return new WP_Error('missing_fields', 'Required field: characterName', array('status' => 400));
+        }
+
+        $streamer = $wpdb->get_row($wpdb->prepare(
+            "SELECT s.* FROM {$this->table_mapping} m
+             JOIN {$this->table_streamers} s ON s.twitch_username = m.twitch_username
+             WHERE m.character_name = %s
+             LIMIT 1",
+            $character_name
+        ), ARRAY_A);
+
+        if (!$streamer) {
+            return new WP_Error('character_not_registered',
+                'Charakter ist nicht angemeldet – bitte bei DodasWelt melden.', array('status' => 403));
+        }
+
+        $token  = trim((string) $request->get_header('X-LOTRO-Token'));
+        $client = trim((string) $request->get_header('X-LOTRO-Client'));
+        $now    = current_time('mysql');
+
+        if (!empty($streamer['token_hash'])) {
+            if ($token === '' || !hash_equals($streamer['token_hash'], hash('sha256', $token))) {
+                return new WP_Error('invalid_token',
+                    'Token fehlt oder ist ungültig – bitte Token bei DodasWelt zurücksetzen lassen.', array('status' => 401));
+            }
+            $wpdb->update($this->table_streamers, array('token_last_used' => $now), array('id' => $streamer['id']), array('%s'), array('%d'));
+            $this->auth_context = array('streamer_id' => intval($streamer['id']), 'claim' => false);
+            return true;
+        }
+
+        if ($client !== '') {
+            if (!empty($streamer['claim_until']) && $streamer['claim_until'] >= $now) {
+                $this->auth_context = array('streamer_id' => intval($streamer['id']), 'claim' => true);
+                return true;
+            }
+            // Fenster abgelaufen: kein Token mehr vergeben, aber einen 3.1-Client nicht
+            // schlechter stellen als einen alten Client, solange der Übergang aktiv ist.
+            if (get_option('lotro_death_tracker_allow_legacy', '1') === '1') {
+                $this->auth_context = array('streamer_id' => intval($streamer['id']), 'claim' => false);
+                return true;
+            }
+            return new WP_Error('claim_expired',
+                'Abholfenster für den Token ist abgelaufen – bitte Token bei DodasWelt zurücksetzen lassen.', array('status' => 401));
+        }
+
+        if (get_option('lotro_death_tracker_allow_legacy', '1') === '1') {
+            $this->auth_context = array('streamer_id' => intval($streamer['id']), 'claim' => false);
+            return true;
+        }
+        return new WP_Error('client_outdated',
+            'Client-Version zu alt – bitte LOTRO Death Tracker aktualisieren.', array('status' => 401));
+    }
+
+    /**
+     * Issues the streamer's token if check_client_permission() allowed a claim.
+     * The UPDATE only succeeds while token_hash is still NULL, so concurrent first
+     * requests (client + watcher) can never produce two tokens. Returns the
+     * plaintext token exactly once, or null.
+     */
+    private function maybe_claim_token() {
+        global $wpdb;
+        if (empty($this->auth_context['claim'])) {
+            return null;
+        }
+        $this->auth_context['claim'] = false;
+
+        $token = bin2hex(random_bytes(32));
+        $now   = current_time('mysql');
+        $rows  = $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->table_streamers}
+             SET token_hash = %s, token_claimed_at = %s, token_last_used = %s
+             WHERE id = %d AND token_hash IS NULL AND claim_until >= %s",
+            hash('sha256', $token), $now, $now, $this->auth_context['streamer_id'], $now
+        ));
+        return $rows === 1 ? $token : null;
+    }
+
+    public function check_test_mode($request) {
+        if (get_option('lotro_death_tracker_test_mode', '0') !== '1') {
+            return new WP_Error('rest_no_route', 'Testmodus ist deaktiviert.', array('status' => 404));
+        }
+        return true;
+    }
+
+    public function check_test_client_permission($request) {
+        $mode = $this->check_test_mode($request);
+        return is_wp_error($mode) ? $mode : $this->check_client_permission($request);
+    }
+
+    // -------------------------------------------------------------------------
+    // Overlay slot schedule
+    // -------------------------------------------------------------------------
+
+    private function now_ms() {
+        return (int) round(microtime(true) * 1000);
+    }
+
+    /**
+     * Next free broadcast slot: now + lead time, or right after the last slot.
+     * Callers must hold the slot lock (see api_submit_event).
+     */
+    private function next_slot_ms() {
+        global $wpdb;
+        $start = $this->now_ms() + self::LEAD_MS;
+        $last  = $wpdb->get_var("SELECT MAX(show_at_ms) FROM {$this->table_deaths}");
+        if ($last !== null) {
+            $start = max($start, intval($last) + self::SLOT_MS);
+        }
+        return $start;
+    }
+
+    /**
+     * Marks deaths whose slot is over as shown (processed=1). Keeps History and
+     * herrin-inge.de working, which only list processed entries.
+     */
+    private function finalize_shown() {
+        global $wpdb;
+        $wpdb->query($wpdb->prepare(
+            "UPDATE {$this->table_deaths}
+             SET processed = 1, shown_at = FROM_UNIXTIME(show_at_ms DIV 1000)
+             WHERE processed = 0 AND show_at_ms IS NOT NULL AND show_at_ms <= %d",
+            $this->now_ms() - self::SLOT_MS
         ));
     }
 
@@ -506,6 +795,7 @@ class LOTRO_Death_Tracker {
             'region'         => $row['region'],
             'race'           => $row['race'] ?? null,
             'characterClass' => $row['character_class'] ?? null,
+            'showAt'         => isset($row['show_at_ms']) ? intval($row['show_at_ms']) : null,
         );
     }
 
@@ -514,45 +804,54 @@ class LOTRO_Death_Tracker {
     // -------------------------------------------------------------------------
 
     /**
-     * POST /death
+     * POST /death  [Streamer-Token, see check_client_permission()]
      * Accepts both "death" and "levelup" events from the Node.js client.
-     * – death   → queued in wp_lotro_deaths, character stats updated
-     * – levelup → character level updated, nothing queued
+     * – death   → gets the next overlay slot in wp_lotro_deaths, character stats updated
+     * – levelup → character level updated, nothing scheduled
+     * A newly issued token is returned once as "authToken".
      */
     public function api_submit_event($request) {
         global $wpdb;
 
         $params = $request->get_json_params();
 
-        if (empty($params['characterName'])) {
-            return new WP_Error('missing_fields', 'Required field: characterName', array('status' => 400));
-        }
-
-        $character_name  = sanitize_text_field($params['characterName']);
+        $character_name  = self::clip($params['characterName'] ?? '', 64);
         $event_type      = sanitize_text_field($params['eventType'] ?? 'death');
         $level           = intval($params['level'] ?? 0);
-        $race            = sanitize_text_field($params['race'] ?? '');
-        $character_class = sanitize_text_field($params['characterClass'] ?? '');
+        $race            = self::clip($params['race'] ?? '', 50);
+        $character_class = self::clip($params['characterClass'] ?? '', 50);
 
-        // ── Level-up: update character level, do not touch the death queue ──
+        if ($event_type !== 'death' && $event_type !== 'levelup') {
+            return new WP_Error('invalid_event', 'eventType must be "death" or "levelup"', array('status' => 400));
+        }
+        if ($level < 0 || $level > 200) {
+            return new WP_Error('invalid_level', 'level must be between 0 and 200', array('status' => 400));
+        }
+
+        // ── Level-up: update character level, do not touch the death schedule ──
         if ($event_type === 'levelup') {
             $this->upsert_character($character_name, $level, false, $race, $character_class);
-            return rest_ensure_response(array(
+            return rest_ensure_response($this->with_auth_token(array(
                 'success'       => true,
                 'message'       => 'Level updated',
                 'characterName' => $character_name,
                 'level'         => $level,
-            ));
+            )));
         }
 
         // ── Death: read current count, INSERT first, then increment counter ──
         // Reading before INSERT ensures the counter is only updated when the
-        // queue entry was actually created (avoids phantom increments on DB error).
+        // entry was actually created (avoids phantom increments on DB error).
+        // The slot lock serialises concurrent deaths so no two get the same slot.
+        $lock = 'lotro_dt_slot_' . $this->table_deaths;
+        $wpdb->get_var($wpdb->prepare("SELECT GET_LOCK(%s, 5)", $lock));
+
         $current_deaths = intval($wpdb->get_var($wpdb->prepare(
             "SELECT total_deaths FROM {$this->table_characters} WHERE character_name = %s",
             $character_name
         )));
         $death_count = $current_deaths + 1;
+        $show_at_ms  = $this->next_slot_ms();
 
         $result = $wpdb->insert(
             $this->table_deaths,
@@ -561,17 +860,21 @@ class LOTRO_Death_Tracker {
                 'level'           => $level,
                 'event_type'      => 'death',
                 'death_count'     => $death_count,
-                'death_date'      => sanitize_text_field($params['date'] ?? ''),
-                'death_time'      => sanitize_text_field($params['time'] ?? ''),
-                'death_datetime'  => sanitize_text_field($params['datetime'] ?? current_time('mysql')),
-                'region'          => sanitize_text_field($params['region'] ?? 'Unknown Location'),
+                'death_date'      => self::clip($params['date'] ?? '', 50),
+                'death_time'      => self::clip($params['time'] ?? '', 50),
+                'death_datetime'  => self::clip($params['datetime'] ?? current_time('mysql'), 50),
+                'region'          => self::clip($params['region'] ?? 'Unknown Location', 100),
                 'race'            => $race,
                 'character_class' => $character_class,
                 'timestamp'       => intval($params['timestamp'] ?? time()),
                 'processed'       => 0,
+                'show_at_ms'      => $show_at_ms,
             ),
-            array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d')
+            array('%s', '%d', '%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%d', '%d')
         );
+        $insert_id = $wpdb->insert_id;
+
+        $wpdb->get_var($wpdb->prepare("SELECT RELEASE_LOCK(%s)", $lock));
 
         if ($result === false) {
             return new WP_Error('db_error', 'Failed to save event.', array('status' => 500));
@@ -580,36 +883,51 @@ class LOTRO_Death_Tracker {
         // INSERT succeeded → now safely update the character stats
         $this->upsert_character($character_name, $level, true, $race, $character_class);
 
+        $this->finalize_shown();
         $queue_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0");
 
-        return rest_ensure_response(array(
+        return rest_ensure_response($this->with_auth_token(array(
             'success'       => true,
             'message'       => 'Death event queued',
             'queuePosition' => intval($queue_count),
             'deathCount'    => $death_count,
-            'id'            => $wpdb->insert_id,
-        ));
+            'id'            => $insert_id,
+            'showAt'        => $show_at_ms,
+        )));
+    }
+
+    /** Adds "authToken" to a response if this request just claimed the streamer's token. */
+    private function with_auth_token(array $response) {
+        $token = $this->maybe_claim_token();
+        if ($token !== null) {
+            $response['authToken'] = $token;
+        }
+        return $response;
     }
 
     /**
-     * POST /death/silent
+     * POST /death/silent  [Streamer-Token]
      * Inserts N missed deaths with processed=1 (never shown in overlay).
      * Called by the watcher at startup to back-fill deaths that occurred while
-     * the client was not running.
+     * the client was not running. count is capped at SILENT_MAX_COUNT per request;
+     * the watcher catches up on the remainder at its next start.
      * Body: { characterName, count, level, race, characterClass }
      */
     public function api_submit_silent($request) {
         global $wpdb;
 
         $params          = $request->get_json_params();
-        $character_name  = sanitize_text_field($params['characterName'] ?? '');
-        $count           = intval($params['count'] ?? 0);
+        $character_name  = self::clip($params['characterName'] ?? '', 64);
+        $count           = min(intval($params['count'] ?? 0), self::SILENT_MAX_COUNT);
         $level           = intval($params['level'] ?? 0);
-        $race            = sanitize_text_field($params['race'] ?? '');
-        $character_class = sanitize_text_field($params['characterClass'] ?? '');
+        $race            = self::clip($params['race'] ?? '', 50);
+        $character_class = self::clip($params['characterClass'] ?? '', 50);
 
         if (empty($character_name) || $count <= 0) {
             return new WP_Error('missing_fields', 'characterName and count > 0 required', array('status' => 400));
+        }
+        if ($level < 0 || $level > 200) {
+            return new WP_Error('invalid_level', 'level must be between 0 and 200', array('status' => 400));
         }
 
         $inserted = 0;
@@ -646,112 +964,82 @@ class LOTRO_Death_Tracker {
             }
         }
 
-        return rest_ensure_response(array(
+        return rest_ensure_response($this->with_auth_token(array(
             'success'  => true,
             'inserted' => $inserted,
-        ));
+        )));
     }
 
     /**
      * GET /death/current
-     * Returns the oldest unprocessed death including level and deathCount.
-     * Response key is "data" (matches overlay expectation).
+     * Returns the death whose overlay slot is running now or comes next, plus the
+     * following slots. All overlays use serverTime to align their clocks and show
+     * the same death at the same moment – nothing is acknowledged by the overlay.
+     * Response key is "data" (also understood by the old StreamElements overlay).
      */
     public function api_get_current_death($request) {
         global $wpdb;
 
-        $death = $wpdb->get_row(
-            "SELECT * FROM {$this->table_deaths}
-             WHERE processed = 0
-             ORDER BY id ASC
-             LIMIT 1",
-            ARRAY_A
-        );
+        $this->finalize_shown();
+        $now = $this->now_ms();
 
-        if (!$death) {
-            return rest_ensure_response(array(
-                'success'     => false,
-                'message'     => 'No current death',
-                'queueLength' => 0,
-            ));
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM {$this->table_deaths}
+             WHERE processed = 0 AND show_at_ms IS NOT NULL AND show_at_ms > %d
+             ORDER BY show_at_ms ASC
+             LIMIT 5",
+            $now - self::SLOT_MS
+        ), ARRAY_A);
+
+        $slots = array_map(array($this, 'format_death'), $rows);
+        $queue_count = intval($wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0"));
+
+        $response = array(
+            'success'     => !empty($slots),
+            'data'        => $slots ? $slots[0] : null,
+            'upcoming'    => $slots,
+            'queueLength' => $queue_count,
+            'serverTime'  => $now,
+            'slotMs'      => self::SLOT_MS,
+            'displayMs'   => self::DISPLAY_MS,
+        );
+        if (!$slots) {
+            $response['message'] = 'No current death';
         }
 
-        $queue_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0");
-
-        return rest_ensure_response(array(
-            'success'     => true,
-            'data'        => $this->format_death($death),
-            'queueLength' => intval($queue_count),
-        ));
+        $res = rest_ensure_response($response);
+        $res->header('Cache-Control', 'no-store');
+        return $res;
     }
 
     /**
-     * POST /death/next
-     * Marks the current death as processed (shown) and returns the next one.
-     * Response key is "data" (matches overlay expectation).
+     * POST /death/next  [deprecated since 3.1]
+     * No-op: deaths are marked as shown automatically when their slot ends.
+     * Kept so the old StreamElements overlay does not error out.
      */
     public function api_get_next_death($request) {
-        global $wpdb;
-
-        // Validate the ID sent by the overlay so only the matching entry is marked
-        // as shown. This prevents blind queue-clearing by third parties.
-        $params   = $request->get_json_params();
-        $death_id = intval($params['id'] ?? 0);
-
-        if ($death_id > 0) {
-            $wpdb->query($wpdb->prepare(
-                "UPDATE {$this->table_deaths}
-                 SET processed = 1, shown_at = NOW()
-                 WHERE processed = 0 AND id = %d
-                 LIMIT 1",
-                $death_id
-            ));
-        } else {
-            // No ID provided – fall back to oldest unprocessed (backwards-compatible).
-            $wpdb->query(
-                "UPDATE {$this->table_deaths}
-                 SET processed = 1, shown_at = NOW()
-                 WHERE processed = 0
-                 ORDER BY id ASC
-                 LIMIT 1"
-            );
-        }
-
-        $next = $wpdb->get_row(
-            "SELECT * FROM {$this->table_deaths}
-             WHERE processed = 0
-             ORDER BY id ASC
-             LIMIT 1",
-            ARRAY_A
-        );
-
-        $queue_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0");
-
         return rest_ensure_response(array(
             'success'     => true,
-            'data'        => $next ? $this->format_death($next) : null,
-            'queueLength' => intval($queue_count),
+            'data'        => null,
+            'queueLength' => 0,
+            'deprecated'  => 'POST /death/next is no longer needed (overlay slot schedule).',
         ));
     }
 
     /**
-     * GET /queue
+     * GET /overlay
+     * Serves the stream overlay (overlay.html next to this file) as a normal web
+     * page so every streamer can add the same URL as OBS browser source.
      */
-    public function api_get_queue($request) {
-        global $wpdb;
-
-        $queue = $wpdb->get_results(
-            "SELECT * FROM {$this->table_deaths}
-             WHERE processed = 0
-             ORDER BY id ASC",
-            ARRAY_A
-        );
-
-        return rest_ensure_response(array(
-            'success' => true,
-            'queue'   => array_map(array($this, 'format_death'), $queue),
-            'length'  => count($queue),
-        ));
+    public function api_serve_overlay($request) {
+        $file = __DIR__ . '/overlay.html';
+        if (!is_readable($file)) {
+            return new WP_Error('overlay_missing', 'overlay.html fehlt im Plugin-Verzeichnis.', array('status' => 404));
+        }
+        header('Content-Type: text/html; charset=utf-8');
+        header('Cache-Control: no-cache');
+        readfile($file);
+        exit;
     }
 
     /**
@@ -760,6 +1048,8 @@ class LOTRO_Death_Tracker {
      */
     public function api_get_history($request) {
         global $wpdb;
+
+        $this->finalize_shown();
 
         $limit     = min(intval($request->get_param('limit')) ?: 10, 100);
         $character = sanitize_text_field($request->get_param('character') ?? '');
@@ -841,6 +1131,8 @@ class LOTRO_Death_Tracker {
     public function api_health_check($request) {
         global $wpdb;
 
+        $this->finalize_shown();
+
         $queue_count     = intval($wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0"));
         $total_deaths    = intval($wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths}"));
         $character_count = intval($wpdb->get_var("SELECT COUNT(*) FROM {$this->table_characters}"));
@@ -848,7 +1140,7 @@ class LOTRO_Death_Tracker {
         return rest_ensure_response(array(
             'success'        => true,
             'status'         => 'online',
-            'version'        => '3.0',
+            'version'        => '3.1',
             'queueLength'    => $queue_count,
             'totalDeaths'    => $total_deaths,
             'characters'     => $character_count,
@@ -887,8 +1179,8 @@ class LOTRO_Death_Tracker {
         return $this->with_test_tables(fn() => $this->api_get_next_death($request));
     }
 
-    public function api_test_get_queue($request) {
-        return $this->with_test_tables(fn() => $this->api_get_queue($request));
+    public function api_test_submit_silent($request) {
+        return $this->with_test_tables(fn() => $this->api_submit_silent($request));
     }
 
     public function api_test_health_check($request) {
@@ -938,13 +1230,14 @@ class LOTRO_Death_Tracker {
             "SELECT
                 m.twitch_username,
                 m.character_name,
-                m.display_name,
-                m.race,
-                m.character_class,
+                COALESCE(NULLIF(s.display_name, ''), m.display_name) AS display_name,
+                COALESCE(NULLIF(m.race, ''), c.race)                    AS race,
+                COALESCE(NULLIF(m.character_class, ''), c.character_class) AS character_class,
                 COALESCE(c.current_level, 0) AS current_level,
                 COALESCE(c.total_deaths, 0)  AS total_deaths,
                 c.last_seen
              FROM {$this->table_mapping} m
+             LEFT JOIN {$this->table_streamers} s ON s.twitch_username = m.twitch_username
              LEFT JOIN {$this->table_characters} c ON c.character_name = m.character_name
              ORDER BY total_deaths DESC, m.twitch_username ASC",
             ARRAY_A
@@ -987,11 +1280,24 @@ class LOTRO_Death_Tracker {
             return new WP_Error('missing_fields', 'Required: twitchUsername, characterName', array('status' => 400));
         }
 
-        $twitch    = sanitize_text_field($params['twitchUsername']);
-        $character = sanitize_text_field($params['characterName']);
-        $display   = sanitize_text_field($params['displayName'] ?? $twitch);
-        $race      = sanitize_text_field($params['race'] ?? '');
-        $char_class = sanitize_text_field($params['characterClass'] ?? '');
+        $twitch    = self::clip($params['twitchUsername'], 100);
+        $character = self::clip($params['characterName'], 64);
+        $display   = self::clip($params['displayName'] ?? $twitch, 100);
+        $race      = self::clip($params['race'] ?? '', 50);
+        $char_class = self::clip($params['characterClass'] ?? '', 50);
+
+        // Streamer and character rows are created on the fly (admin page uses the same tables)
+        $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$this->table_streamers} (twitch_username, display_name, claim_until)
+             VALUES (%s, %s, %s)
+             ON DUPLICATE KEY UPDATE display_name = VALUES(display_name)",
+            $twitch, $display, $this->claim_deadline()
+        ));
+        $wpdb->query($wpdb->prepare(
+            "INSERT IGNORE INTO {$this->table_characters} (character_name, current_level, total_deaths, race, character_class, last_seen)
+             VALUES (%s, 0, 0, %s, %s, %s)",
+            $character, $race, $char_class, current_time('mysql')
+        ));
 
         $wpdb->query($wpdb->prepare(
             "INSERT INTO {$this->table_mapping} (twitch_username, character_name, display_name, race, character_class)
@@ -1016,7 +1322,8 @@ class LOTRO_Death_Tracker {
 
     /**
      * DELETE /streamers/mapping
-     * Remove a mapping by Twitch username.
+     * Remove a mapping by Twitch username. The streamer itself (incl. token) and the
+     * character's statistics are kept; delete them on the admin page if needed.
      * Requires WordPress admin or Application Password auth.
      *
      * Body: { "twitchUsername": "DodasWelt" }
@@ -1047,6 +1354,320 @@ class LOTRO_Death_Tracker {
             'deleted'        => $deleted > 0,
             'twitchUsername' => $twitch,
         ));
+    }
+
+    // -------------------------------------------------------------------------
+    // Admin page: Streamer, Charaktere, Zuordnung, Tokens, Einstellungen
+    // -------------------------------------------------------------------------
+
+    private static $races   = array('Mensch', 'Elb', 'Zwerg', 'Hobbit', 'Beorninger', 'Hochelb', 'Stark-Axt', 'Fluss-Hobbit');
+    private static $classes = array('Wächter', 'Hauptmann', 'Barde', 'Schurke', 'Jäger', 'Waffenmeister', 'Kundiger',
+                                    'Runenbewahrer', 'Hüter', 'Beorninger', 'Schläger', 'Seefahrer');
+
+    public function register_admin_page() {
+        add_menu_page(
+            'LOTRO Death Tracker',
+            'LOTRO Tracker',
+            'manage_options',
+            'lotro-death-tracker',
+            array($this, 'render_admin_page'),
+            'dashicons-shield',
+            80
+        );
+    }
+
+    private function admin_notice($type, $text) {
+        set_transient('lotro_dt_notice_' . get_current_user_id(), array($type, $text), 60);
+    }
+
+    /**
+     * admin-post.php?action=lotro_dt – every form on the admin page posts here.
+     */
+    public function handle_admin_action() {
+        global $wpdb;
+
+        if (!current_user_can('manage_options')) {
+            wp_die('Keine Berechtigung.', 403);
+        }
+        check_admin_referer('lotro_dt_admin');
+
+        $do  = sanitize_key($_POST['do'] ?? '');
+        $now = current_time('mysql');
+
+        switch ($do) {
+            case 'save_settings':
+                update_option('lotro_death_tracker_test_mode', empty($_POST['test_mode']) ? '0' : '1');
+                update_option('lotro_death_tracker_allow_legacy', empty($_POST['allow_legacy']) ? '0' : '1');
+                $this->admin_notice('success', 'Einstellungen gespeichert.');
+                break;
+
+            case 'add_streamer':
+                $twitch  = self::clip(wp_unslash($_POST['twitch_username'] ?? ''), 100);
+                $display = self::clip(wp_unslash($_POST['display_name'] ?? ''), 100);
+                if ($twitch === '') {
+                    $this->admin_notice('error', 'Twitch-Name fehlt.');
+                    break;
+                }
+                $ok = $wpdb->insert($this->table_streamers, array(
+                    'twitch_username' => $twitch,
+                    'display_name'    => $display !== '' ? $display : $twitch,
+                    'claim_until'     => $this->claim_deadline(),
+                ), array('%s', '%s', '%s'));
+                $ok
+                    ? $this->admin_notice('success', "Streamer „{$twitch}“ angelegt. Token kann " . self::CLAIM_DAYS . ' Tage lang abgeholt werden.')
+                    : $this->admin_notice('error', "Streamer „{$twitch}“ existiert bereits.");
+                break;
+
+            case 'delete_streamer':
+                $id = intval($_POST['streamer_id'] ?? 0);
+                $twitch = $wpdb->get_var($wpdb->prepare("SELECT twitch_username FROM {$this->table_streamers} WHERE id = %d", $id));
+                if ($twitch !== null) {
+                    $wpdb->delete($this->table_mapping, array('twitch_username' => $twitch), array('%s'));
+                    $wpdb->delete($this->table_streamers, array('id' => $id), array('%d'));
+                    $this->admin_notice('success', "Streamer „{$twitch}“ gelöscht (Charakter-Statistik bleibt erhalten).");
+                }
+                break;
+
+            case 'reset_token':
+                $id = intval($_POST['streamer_id'] ?? 0);
+                $wpdb->update($this->table_streamers, array(
+                    'token_hash'       => null,
+                    'token_claimed_at' => null,
+                    'claim_until'      => $this->claim_deadline(),
+                ), array('id' => $id), array('%s', '%s', '%s'), array('%d'));
+                $this->admin_notice('success', 'Token zurückgesetzt. Der nächste Tod/Level-up vom PC des Streamers holt innerhalb von '
+                    . self::CLAIM_DAYS . ' Tagen einen neuen Token ab.');
+                break;
+
+            case 'add_character':
+                $name  = self::clip(wp_unslash($_POST['character_name'] ?? ''), 64);
+                $race  = self::clip(wp_unslash($_POST['race'] ?? ''), 50);
+                $class = self::clip(wp_unslash($_POST['character_class'] ?? ''), 50);
+                if ($name === '') {
+                    $this->admin_notice('error', 'Charaktername fehlt.');
+                    break;
+                }
+                $ok = $wpdb->insert($this->table_characters, array(
+                    'character_name'  => $name,
+                    'current_level'   => 0,
+                    'total_deaths'    => 0,
+                    'race'            => $race,
+                    'character_class' => $class,
+                    'last_seen'       => $now,
+                ), array('%s', '%d', '%d', '%s', '%s', '%s'));
+                $ok
+                    ? $this->admin_notice('success', "Charakter „{$name}“ angelegt.")
+                    : $this->admin_notice('error', "Charakter „{$name}“ existiert bereits.");
+                break;
+
+            case 'delete_character':
+                $name = self::clip(wp_unslash($_POST['character_name'] ?? ''), 64);
+                $mapped = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->table_mapping} WHERE character_name = %s", $name));
+                if (intval($mapped) > 0) {
+                    $this->admin_notice('error', "„{$name}“ ist noch einem Streamer zugeordnet – erst Zuordnung lösen.");
+                    break;
+                }
+                $wpdb->delete($this->table_characters, array('character_name' => $name), array('%s'));
+                $this->admin_notice('success', "Charakter „{$name}“ gelöscht (Todes-History bleibt erhalten).");
+                break;
+
+            case 'assign':
+                $id   = intval($_POST['streamer_id'] ?? 0);
+                $name = self::clip(wp_unslash($_POST['character_name'] ?? ''), 64);
+                $streamer = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$this->table_streamers} WHERE id = %d", $id), ARRAY_A);
+                $char_exists = $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$this->table_characters} WHERE character_name = %s", $name));
+                if (!$streamer || intval($char_exists) === 0) {
+                    $this->admin_notice('error', 'Streamer oder Charakter nicht gefunden.');
+                    break;
+                }
+                $owner = $wpdb->get_var($wpdb->prepare(
+                    "SELECT twitch_username FROM {$this->table_mapping} WHERE character_name = %s AND twitch_username <> %s",
+                    $name, $streamer['twitch_username']
+                ));
+                if ($owner !== null) {
+                    $this->admin_notice('error', "„{$name}“ ist bereits „{$owner}“ zugeordnet.");
+                    break;
+                }
+                // Ein Charakter pro Streamer: bestehende Zuordnung wird ersetzt
+                $wpdb->delete($this->table_mapping, array('twitch_username' => $streamer['twitch_username']), array('%s'));
+                $wpdb->insert($this->table_mapping, array(
+                    'twitch_username' => $streamer['twitch_username'],
+                    'character_name'  => $name,
+                    'display_name'    => $streamer['display_name'],
+                ), array('%s', '%s', '%s'));
+                $this->admin_notice('success', "„{$name}“ ist jetzt „{$streamer['twitch_username']}“ zugeordnet.");
+                break;
+
+            case 'unassign':
+                $id = intval($_POST['streamer_id'] ?? 0);
+                $twitch = $wpdb->get_var($wpdb->prepare("SELECT twitch_username FROM {$this->table_streamers} WHERE id = %d", $id));
+                if ($twitch !== null) {
+                    $wpdb->delete($this->table_mapping, array('twitch_username' => $twitch), array('%s'));
+                    $this->admin_notice('success', "Zuordnung von „{$twitch}“ gelöst.");
+                }
+                break;
+        }
+
+        wp_safe_redirect(admin_url('admin.php?page=lotro-death-tracker'));
+        exit;
+    }
+
+    /**
+     * Opening <form> tag for one admin action, including nonce.
+     * The confirm text goes into a data attribute and is read as plain data –
+     * never build it into the inline JS (esc_attr does not double-encode, so a
+     * name containing "&quot;" would break out of a JS string literal).
+     */
+    private function admin_form_open($do, $confirm = '') {
+        $onsubmit = $confirm !== ''
+            ? ' data-confirm="' . esc_attr($confirm) . '" onsubmit="return confirm(this.dataset.confirm);"'
+            : '';
+        echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '" style="display:inline"' . $onsubmit . '>';
+        echo '<input type="hidden" name="action" value="lotro_dt">';
+        echo '<input type="hidden" name="do" value="' . esc_attr($do) . '">';
+        wp_nonce_field('lotro_dt_admin');
+    }
+
+    private function token_status_label(array $s, $now) {
+        if (!empty($s['token_hash'])) {
+            return 'abgeholt am ' . esc_html($s['token_claimed_at']);
+        }
+        if (!empty($s['claim_until']) && $s['claim_until'] >= $now) {
+            return '<span style="color:#996800">offen bis ' . esc_html($s['claim_until']) . '</span>';
+        }
+        return '<span style="color:#b32d2e">Abholfenster abgelaufen</span>';
+    }
+
+    public function render_admin_page() {
+        global $wpdb;
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        $now        = current_time('mysql');
+        $streamers  = $wpdb->get_results(
+            "SELECT s.*, m.character_name FROM {$this->table_streamers} s
+             LEFT JOIN {$this->table_mapping} m ON m.twitch_username = s.twitch_username
+             ORDER BY s.twitch_username ASC", ARRAY_A);
+        $characters = $wpdb->get_results(
+            "SELECT c.*, m.twitch_username FROM {$this->table_characters} c
+             LEFT JOIN {$this->table_mapping} m ON m.character_name = c.character_name
+             ORDER BY c.character_name ASC", ARRAY_A);
+        $test_mode    = get_option('lotro_death_tracker_test_mode', '0') === '1';
+        $allow_legacy = get_option('lotro_death_tracker_allow_legacy', '1') === '1';
+        $overlay_url  = rest_url('lotro-deaths/v1/overlay');
+
+        echo '<div class="wrap"><h1>LOTRO Death Tracker</h1>';
+
+        $notice = get_transient('lotro_dt_notice_' . get_current_user_id());
+        if ($notice) {
+            delete_transient('lotro_dt_notice_' . get_current_user_id());
+            echo '<div class="notice notice-' . esc_attr($notice[0]) . ' is-dismissible"><p>' . esc_html($notice[1]) . '</p></div>';
+        }
+
+        echo '<p>Overlay-URL für alle Streamer (OBS → Browser-Quelle, 1920×1080): <code>' . esc_html($overlay_url) . '</code></p>';
+
+        // ── Streamer ──
+        echo '<h2>Streamer</h2>';
+        echo '<table class="widefat striped"><thead><tr><th>Twitch-Name</th><th>Anzeigename</th><th>Charakter</th><th>Token</th><th>Zuletzt gesendet</th><th>Aktionen</th></tr></thead><tbody>';
+        if (!$streamers) {
+            echo '<tr><td colspan="6">Noch keine Streamer angelegt.</td></tr>';
+        }
+        foreach ($streamers as $st) {
+            echo '<tr><td>' . esc_html($st['twitch_username']) . '</td>';
+            echo '<td>' . esc_html($st['display_name']) . '</td>';
+            echo '<td>' . ($st['character_name'] !== null ? esc_html($st['character_name']) : '<em>– keiner –</em>') . '</td>';
+            echo '<td>' . $this->token_status_label($st, $now) . '</td>';
+            echo '<td>' . esc_html($st['token_last_used'] ?? '–') . '</td><td>';
+            $this->admin_form_open('reset_token', 'Token von ' . $st['twitch_username'] . ' zurücksetzen? Der PC des Streamers holt beim nächsten Senden einen neuen ab.');
+            echo '<input type="hidden" name="streamer_id" value="' . intval($st['id']) . '">';
+            submit_button('Token zurücksetzen', 'secondary small', '', false);
+            echo '</form> ';
+            if ($st['character_name'] !== null) {
+                $this->admin_form_open('unassign', 'Zuordnung von ' . $st['twitch_username'] . ' lösen?');
+                echo '<input type="hidden" name="streamer_id" value="' . intval($st['id']) . '">';
+                submit_button('Zuordnung lösen', 'secondary small', '', false);
+                echo '</form> ';
+            }
+            $this->admin_form_open('delete_streamer', 'Streamer ' . $st['twitch_username'] . ' löschen?');
+            echo '<input type="hidden" name="streamer_id" value="' . intval($st['id']) . '">';
+            submit_button('Löschen', 'delete small', '', false);
+            echo '</form></td></tr>';
+        }
+        echo '</tbody></table>';
+
+        echo '<h3>Streamer anlegen</h3>';
+        $this->admin_form_open('add_streamer');
+        echo '<input type="text" name="twitch_username" placeholder="Twitch-Name" required maxlength="100"> ';
+        echo '<input type="text" name="display_name" placeholder="Anzeigename (optional)" maxlength="100"> ';
+        submit_button('Anlegen', 'primary', '', false);
+        echo '</form>';
+
+        // ── Zuordnung ──
+        echo '<h2>Zuordnung Streamer ↔ Charakter</h2>';
+        echo '<p>Ein Charakter pro Streamer. Eine neue Zuordnung ersetzt die bisherige. Nur zugeordnete Charaktere dürfen Tode und Level-ups senden.</p>';
+        $this->admin_form_open('assign');
+        echo '<select name="streamer_id" required><option value="">Streamer wählen…</option>';
+        foreach ($streamers as $st) {
+            echo '<option value="' . intval($st['id']) . '">' . esc_html($st['twitch_username']) . '</option>';
+        }
+        echo '</select> → <select name="character_name" required><option value="">Charakter wählen…</option>';
+        foreach ($characters as $ch) {
+            $suffix = $ch['twitch_username'] !== null ? ' (' . $ch['twitch_username'] . ')' : '';
+            echo '<option value="' . esc_attr($ch['character_name']) . '">' . esc_html($ch['character_name'] . $suffix) . '</option>';
+        }
+        echo '</select> ';
+        submit_button('Zuordnen', 'primary', '', false);
+        echo '</form>';
+
+        // ── Charaktere ──
+        echo '<h2>Charaktere</h2>';
+        echo '<table class="widefat striped"><thead><tr><th>Name</th><th>Volk</th><th>Klasse</th><th>Level</th><th>Tode</th><th>Streamer</th><th>Zuletzt gesehen</th><th></th></tr></thead><tbody>';
+        if (!$characters) {
+            echo '<tr><td colspan="8">Noch keine Charaktere.</td></tr>';
+        }
+        foreach ($characters as $ch) {
+            echo '<tr><td>' . esc_html($ch['character_name']) . '</td>';
+            echo '<td>' . esc_html($ch['race']) . '</td>';
+            echo '<td>' . esc_html($ch['character_class']) . '</td>';
+            echo '<td>' . intval($ch['current_level']) . '</td>';
+            echo '<td>' . intval($ch['total_deaths']) . '</td>';
+            echo '<td>' . esc_html($ch['twitch_username'] ?? '–') . '</td>';
+            echo '<td>' . esc_html($ch['last_seen']) . '</td><td>';
+            if ($ch['twitch_username'] === null) {
+                $this->admin_form_open('delete_character', 'Charakter ' . $ch['character_name'] . ' löschen?');
+                echo '<input type="hidden" name="character_name" value="' . esc_attr($ch['character_name']) . '">';
+                submit_button('Löschen', 'delete small', '', false);
+                echo '</form>';
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table>';
+
+        echo '<h3>Charakter anlegen</h3>';
+        $this->admin_form_open('add_character');
+        echo '<input type="text" name="character_name" placeholder="Charaktername" required maxlength="64"> ';
+        echo '<select name="race"><option value="">Volk…</option>';
+        foreach (self::$races as $r) {
+            echo '<option>' . esc_html($r) . '</option>';
+        }
+        echo '</select> <select name="character_class"><option value="">Klasse…</option>';
+        foreach (self::$classes as $c) {
+            echo '<option>' . esc_html($c) . '</option>';
+        }
+        echo '</select> ';
+        submit_button('Anlegen', 'primary', '', false);
+        echo '</form>';
+
+        // ── Einstellungen ──
+        echo '<h2>Einstellungen</h2>';
+        $this->admin_form_open('save_settings');
+        echo '<p><label><input type="checkbox" name="allow_legacy" value="1"' . checked($allow_legacy, true, false) . '> '
+            . 'Alte Clients ohne Token zulassen (nur für Streamer, die noch keinen Token abgeholt haben). Ausschalten, sobald alle einen Token haben.</label></p>';
+        echo '<p><label><input type="checkbox" name="test_mode" value="1"' . checked($test_mode, true, false) . '> '
+            . 'Testmodus: <code>/test/*</code>-Endpunkte aktiv (schreiben in Test-Tabellen). Nach dem Testen wieder ausschalten.</label></p>';
+        submit_button('Speichern', 'primary', '', false);
+        echo '</form></div>';
     }
 }
 

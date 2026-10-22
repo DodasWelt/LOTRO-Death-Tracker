@@ -1,7 +1,7 @@
-// LOTRO Death & Level Tracker - Client Component v3.0
+// LOTRO Death & Level Tracker - Client Component v3.1
 // Monitors LOTRO plugin data and syncs to WordPress API
 // Author: DodasWelt
-// Version: 3.0
+// Version: 3.1
 
 const fs = require('fs').promises;
 const path = require('path');
@@ -13,7 +13,7 @@ const os = require('os');
 const CONFIG = {
     serverUrl: process.env.SERVER_URL || 'https://www.dodaswelt.de/wp-json/lotro-deaths/v1/death',
     pollInterval: 1000,
-    version: '3.0',
+    version: '3.1',
     autoRestart: false,
     logFile: path.join(__dirname, 'client.log')
 };
@@ -21,6 +21,24 @@ const CONFIG = {
 // PID-Datei schreiben damit der Status-Server den Client-Prozess erkennen kann
 const CLIENT_PID_FILE = path.join(__dirname, 'client.pid');
 try { require('fs').writeFileSync(CLIENT_PID_FILE, String(process.pid)); } catch (_) {}
+
+// Streamer-Token (ab v3.1): wird beim ersten Senden vom Server vergeben und hier abgelegt.
+// Der Watcher liest/schreibt dieselbe Datei (siehe install-autostart.js).
+const TOKEN_FILE = path.join(__dirname, 'token.txt');
+
+function readAuthToken() {
+    if (process.env.LOTRO_TOKEN) return process.env.LOTRO_TOKEN.trim();
+    try { return require('fs').readFileSync(TOKEN_FILE, 'utf8').trim(); } catch (_) { return ''; }
+}
+
+function saveAuthToken(token) {
+    try {
+        require('fs').writeFileSync(TOKEN_FILE, token, 'utf8');
+        log('Streamer-Token vom Server erhalten und gespeichert.', 'success');
+    } catch (error) {
+        log(`Token konnte nicht gespeichert werden: ${error.message}`, 'error');
+    }
+}
 
 // State
 let lastProcessedTimestamp = 0;
@@ -152,13 +170,23 @@ async function sendEventToServer(eventData) {
     try {
         log(`Sending ${eventTypeLabel} to server...`, 'info');
         
+        const headers = {
+            'Content-Type': 'application/json',
+            'X-LOTRO-Client': CONFIG.version
+        };
+        // Datei bei jedem Senden neu lesen – der Watcher kann den Token zwischendurch abgeholt haben
+        const token = readAuthToken();
+        if (token) headers['X-LOTRO-Token'] = token;
+
         const response = await axios.post(CONFIG.serverUrl, eventData, {
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers,
             timeout: 10000
         });
-        
+
+        if (response.data.authToken) {
+            saveAuthToken(response.data.authToken);
+        }
+
         if (response.data.success) {
             if (eventData.eventType === 'death' && response.data.queuePosition) {
                 log(`Death successfully sent! Queue position: ${response.data.queuePosition}`, 'success');
@@ -172,7 +200,11 @@ async function sendEventToServer(eventData) {
         }
     } catch (error) {
         if (error.response) {
-            log(`Server error (${error.response.status}): ${error.response.data.error || 'Unknown error'}`, 'error');
+            const body = error.response.data || {};
+            log(`Server error (${error.response.status}): ${body.message || body.error || 'Unknown error'}`, 'error');
+            if (error.response.status === 401 || error.response.status === 403) {
+                log('Der Server hat das Event abgelehnt (Charakter nicht angemeldet oder Token ungueltig). Bitte bei DodasWelt melden.', 'warning');
+            }
         } else if (error.request) {
             log(`Cannot reach server: ${error.message}`, 'error');
         } else {

@@ -370,7 +370,7 @@ echo ================================================================
 echo.
 echo                  INSTALLATION ERFOLGREICH!
 echo.
-echo                  Installierte Version: 3.0
+echo                  Installierte Version: 3.1
 echo.
 echo ================================================================
 echo.
@@ -391,7 +391,7 @@ echo ================================================================
 echo.
 
 REM Zeige Erfolgs-Popup - sichtbar auch wenn das CMD-Fenster sich schliesst
-echo MsgBox "LOTRO Death Tracker v3.0 erfolgreich installiert! Watcher laeuft im Hintergrund.", 64, "Installation fertig!" > "%TEMP%\_lotro_install_done.vbs"
+echo MsgBox "LOTRO Death Tracker v3.1 erfolgreich installiert! Watcher laeuft im Hintergrund.", 64, "Installation fertig!" > "%TEMP%\_lotro_install_done.vbs"
 cscript //nologo "%TEMP%\_lotro_install_done.vbs"
 del "%TEMP%\_lotro_install_done.vbs" >nul 2>&1
 echo [%DATE% %TIME%] INSTALLATION abgeschlossen (Popup bestaetigt) >> "%INSTALL_LOG%"

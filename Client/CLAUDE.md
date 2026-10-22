@@ -121,6 +121,15 @@ Watcher startet
 
 ---
 
+## Streamer-Token (ab v3.1)
+
+- Datei `token.txt` im Installationsordner (`C:\LOTRO-Death-Tracker\` bzw. `~/.local/share/lotro-death-tracker/`). Env-Override `LOTRO_TOKEN` (nur `client.js`).
+- `client.js` (`sendEventToServer`) und Watcher (`httpsPostJSON` → `/death/silent`) senden `X-LOTRO-Client: <Version>` + `X-LOTRO-Token`, lesen die Datei **bei jeder Anfrage neu** (der jeweils andere Prozess kann den Token gerade abgeholt haben) und speichern `authToken` aus der Antwort.
+- Updater/Auto-Update fassen `token.txt` nicht an (feste Dateiliste). `REINSTALL.bat/.sh` sichern sie ins Staging und spielen sie **vor** `INSTALL` zurück. `UNINSTALL` löscht sie mit dem Ordner (gewollt – danach setzt Michael den Token im WP-Admin zurück).
+- 401/403 vom Server werden in `client.log`/`watcher.log` mit Hinweis geloggt. Watcher sendet bei nicht gemappten Twinks 403 → nur Logzeile.
+
+---
+
 ## Kritische Implementierungsdetails
 
 1. **`windowsHide: true`** — ALLE `exec()` und `spawn()` im Watcher MÜSSEN diese Option haben, sonst öffnet Windows alle 5s ein CMD-Fenster.

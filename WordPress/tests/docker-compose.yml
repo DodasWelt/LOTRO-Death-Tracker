@@ -1,0 +1,38 @@
+# Lokale Testumgebung für das WP-Plugin – Start über run-tests.sh
+# Plugin-Dateien werden von run-tests.sh nach .plugin/ kopiert (gitignored).
+name: lotro-dt-test
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: wp
+      MYSQL_USER: wp
+      MYSQL_PASSWORD: wp
+  wordpress:
+    image: wordpress:6.6-php8.2-apache
+    depends_on: [db]
+    ports: ["8089:80"]
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wp
+      WORDPRESS_DB_NAME: wp
+    volumes:
+      - wpdata:/var/www/html
+      - ./.plugin:/var/www/html/wp-content/plugins/lotro-death-tracker
+  cli:
+    image: wordpress:cli-php8.2
+    depends_on: [db, wordpress]
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wp
+      WORDPRESS_DB_NAME: wp
+    volumes:
+      - wpdata:/var/www/html
+      - ./.plugin:/var/www/html/wp-content/plugins/lotro-death-tracker
+    entrypoint: ["sleep", "infinity"]
+volumes:
+  wpdata:

@@ -1,6 +1,6 @@
 @echo off
 REM LOTRO Death Tracker - Saubere Neuinstallation via GitHub
-REM Version: 3.0
+REM Version: 3.1
 title LOTRO Death Tracker - Neuinstallation
 
 REM ── Runner-Check (CLAUDE.md Hinweis 23) ─────────────────────────────────────
@@ -381,6 +381,14 @@ if "%PLUGIN_REMOVED%"=="0" (
 echo [%DATE% %TIME%] Runner 3: PLUGIN_REMOVED=%PLUGIN_REMOVED% >> "%RUNNER_LOG%"
 echo   - Plugin entfernt (gefunden: %PLUGIN_REMOVED%)
 
+REM Streamer-Token sichern (REINSTALL behaelt ihn, UNINSTALL entfernt ihn)
+set "TOKEN_KEPT=0"
+if not exist "C:\LOTRO-Death-Tracker\token.txt" goto :token_backup_done
+copy /Y "C:\LOTRO-Death-Tracker\token.txt" "%STAGING%\token.txt.keep" >nul 2>&1
+if exist "%STAGING%\token.txt.keep" set "TOKEN_KEPT=1"
+echo [%DATE% %TIME%] Runner: Token gesichert=%TOKEN_KEPT% >> "%RUNNER_LOG%"
+:token_backup_done
+
 REM Runner-Schritt 4: Installationsverzeichnis loeschen
 echo [4/4] Loesche altes Installationsverzeichnis...
 if not exist "C:\LOTRO-Death-Tracker\" goto :rd_not_needed
@@ -422,6 +430,12 @@ del "%~f0" >nul 2>&1
 exit /b 1
 
 :install_bat
+REM Streamer-Token vor INSTALL.bat zurueckspielen, damit der neue Watcher ihn sofort nutzt
+if not "%TOKEN_KEPT%"=="1" goto :token_restore_done
+if not exist "C:\LOTRO-Death-Tracker" mkdir "C:\LOTRO-Death-Tracker"
+copy /Y "%STAGING%\token.txt.keep" "C:\LOTRO-Death-Tracker\token.txt" >nul 2>&1
+echo [%DATE% %TIME%] Runner: Token wiederhergestellt >> "%RUNNER_LOG%"
+:token_restore_done
 REM INSTALL.bat aus Staging aufrufen
 echo ================================================================
 echo   Installiere neue Version...

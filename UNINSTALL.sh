@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # LOTRO Death Tracker - Deinstallation (Linux)
-# Version: 3.0
+# Version: 3.1
 # Entfernt den LOTRO Death Tracker vollstaendig vom System.
 
 # ── Self-Copy-Pattern (CLAUDE.md Hinweis 22 – Linux) ─────────────────────────
