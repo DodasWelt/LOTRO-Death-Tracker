@@ -149,7 +149,7 @@ docker compose -f WordPress/tests/docker-compose.yml down -v       # Umgebung ko
 ```
 
 - WordPress + MySQL + WP-CLI per `WordPress/tests/docker-compose.yml` (Port 8089, Login admin/admin). Voraussetzung: Docker Desktop mit WSL-Integration für die Distro.
-- `run-tests.sh` kopiert PHP + `overlay.html` nach `WordPress/tests/.plugin/` (gitignored, = Struktur des Release-ZIPs), leert die Plugin-Tabellen der lokalen DB, startet `wordpress` neu und führt `ip_test.php` (Cloudflare-IP-Erkennung) und `e2e.py` (53 Prüfungen: Admin-Formulare, Token-Vergabe/Reset/Fenster, Ablehnungen, Sendeplan, Testmodus, CORS, Rate-Limit, XSS-Regression) aus.
+- `run-tests.sh` kopiert PHP + `overlay.html` nach `WordPress/tests/.plugin/` (gitignored, = Struktur des Release-ZIPs), leert die Plugin-Tabellen der lokalen DB, startet `wordpress` neu und führt `ip_test.php` (Cloudflare-IP-Erkennung) und `e2e.py` (54 Prüfungen: Admin-Formulare, Token-Vergabe/Reset/Fenster, Ablehnungen, Sendeplan, parallele Tode, Testmodus, CORS, Rate-Limit, XSS-Regression; leert am Ende den Sendeplan) aus.
 - **Nach jedem Tausch der PHP-Datei den `wordpress`-Container neu starten** – OPcache hält sonst die alte Version im Speicher (führte beim Migrationstest zu falschen Ergebnissen). `run-tests.sh` macht das automatisch.
 - Migrationstest von einer Vorversion (manuell): alte PHP per `git show <tag>:WordPress/lotro-death-tracker.php` nach `.plugin/` legen, Container neu starten, aktivieren, Altdaten per SQL anlegen, neue PHP zurückkopieren, Container neu starten, eine Anfrage senden.
 

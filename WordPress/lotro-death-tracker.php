@@ -842,7 +842,8 @@ class LOTRO_Death_Tracker {
         // ── Death: read current count, INSERT first, then increment counter ──
         // Reading before INSERT ensures the counter is only updated when the
         // entry was actually created (avoids phantom increments on DB error).
-        // The slot lock serialises concurrent deaths so no two get the same slot.
+        // The slot lock serialises concurrent deaths (same slot, same death_count)
+        // until the character counter has been incremented.
         $lock = 'lotro_dt_slot_' . $this->table_deaths;
         $wpdb->get_var($wpdb->prepare("SELECT GET_LOCK(%s, 5)", $lock));
 
@@ -874,14 +875,16 @@ class LOTRO_Death_Tracker {
         );
         $insert_id = $wpdb->insert_id;
 
+        // INSERT succeeded → now safely update the character stats
+        if ($result !== false) {
+            $this->upsert_character($character_name, $level, true, $race, $character_class);
+        }
+
         $wpdb->get_var($wpdb->prepare("SELECT RELEASE_LOCK(%s)", $lock));
 
         if ($result === false) {
             return new WP_Error('db_error', 'Failed to save event.', array('status' => 500));
         }
-
-        // INSERT succeeded → now safely update the character stats
-        $this->upsert_character($character_name, $level, true, $race, $character_class);
 
         $this->finalize_shown();
         $queue_count = $wpdb->get_var("SELECT COUNT(*) FROM {$this->table_deaths} WHERE processed = 0");

@@ -172,6 +172,11 @@ check('Nach Reset: genau ein neuer Token bei 4 parallelen Anfragen', len(issued)
 token2 = issued[0] if issued else None
 check('Alter Token nach Reset ungültig', death('Testchar', client='3.1', token=token)[0] == 401)
 check('Neuer Token gültig', death('Testchar', client='3.1', token=token2)[0] == 200)
+par = []
+ts = [threading.Thread(target=lambda: par.append(death('Testchar', client='3.1', token=token2, limit_reset=False))) for _ in range(5)]
+reset_rate_limit(); [t.start() for t in ts]; [t.join() for t in ts]
+counts = sorted(r[1]['deathCount'] for r in par if r[0] == 200)
+check('Parallele Tode: eindeutige Todeszähler', len(counts) == 5 and len(set(counts)) == 5, [(r[0], r[1]) for r in par])
 
 sql("UPDATE wp_lotro_streamers SET claim_until = '2000-01-01 00:00:00' WHERE id=%s" % sid2)
 code, js, _, _ = death('Zweitchar', client='3.1')
@@ -206,6 +211,10 @@ check('Streamer gelöscht', sql("SELECT COUNT(*) FROM wp_lotro_streamers WHERE t
 reset_rate_limit()
 codes = [death('Testchar', client='3.1', token=token2, extra={'eventType': 'levelup'}, limit_reset=False)[0] for _ in range(35)]
 check('Rate-Limit greift (429)', 429 in codes and codes.count(200) <= 30, codes)
+
+# Sendeplan leeren, damit ein offenes Overlay nicht minutenlang Testtode abspielt
+sql("UPDATE wp_lotro_deaths SET processed = 1, shown_at = NOW() WHERE processed = 0")
+sql("UPDATE wp_lotro_deaths_test SET processed = 1, shown_at = NOW() WHERE processed = 0")
 
 print('\n%s' % ('ALLE TESTS BESTANDEN' if fails == 0 else '%d TEST(S) FEHLGESCHLAGEN' % fails))
 sys.exit(1 if fails else 0)
