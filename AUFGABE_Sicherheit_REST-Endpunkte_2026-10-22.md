@@ -2,7 +2,7 @@
 
 **Erstellt:** 22.10.2026, aus einer Sicherheits-Session zu dodaswelt.de (Anlass: PHP-Lücken php2shell, CVE-2026-109618/-109619)
 **Betrifft:** `WordPress/lotro-death-tracker.php` (läuft live auf dodaswelt.de, Plugin-Version 3.0)
-**Status:** umgesetzt am 22.10.2026 (v3.1, lokal getestet, nicht committet, nicht released) — offen: WP-Plugin hochladen, Test gegen dodaswelt.de, Pre-Release
+**Status:** ✅ ERLEDIGT am 22.10.2026 — umgesetzt als v3.1, getestet, gepusht, Pre-Release v3.1 erstellt. Offen bei Michael: WP-Plugin hochladen + Live-Test (siehe Abschluss unten).
 
 ## Befund (Stichprobe vom 22.10.2026)
 
@@ -137,3 +137,35 @@ Weitere Befunde:
 - **Client-Release vormerken:** Client 3.1 wird als **GitHub-Pre-Release** veröffentlicht. `/releases/latest` (Watcher und WP-Plugin) ignoriert Pre-Releases → kein Update-Dialog, kein Auto-Update bei den Streamern. WP-Plugin 3.1 installiert Michael per ZIP-Upload, sobald er will (kompatibel mit Client 3.0).
 - **Season-Start:** 1. Pre-Release → `latest` (Clients aktualisieren sich beim nächsten Watcher-Check bzw. LOTRO-Start), 2. Streamer anlegen (7-Tage-Fenster beginnt).
 - Admin-Schalter **„Alte Clients (ohne Token) zulassen"** (Standard: an) statt eines späteren WP-3.2-Releases.
+
+---
+
+## Abschluss (22.10.2026)
+
+**Erledigt:**
+
+| Punkt | Ergebnis |
+|---|---|
+| 1. Ist-Analyse | ✅ Tabelle oben (alle Routen, Aufrufer, Risiko) |
+| 2. Lösungsvorschlag | ✅ mit Michael abgestimmt (Entscheidungen siehe „Überarbeiteter Plan") |
+| 3. Rückwärtskompatibilität / Rollout | ✅ Alte Clients laufen weiter (Schalter „Alte Clients zulassen"), Client 3.1 nur als Pre-Release, altes StreamElements-Overlay funktioniert weiter |
+| 4. Umsetzung + Test | ✅ v3.1 umgesetzt, lokal in Docker getestet |
+
+**Umgesetzt in v3.1:**
+- Nur gemappte Charaktere dürfen senden (403 sonst)
+- Streamer-Token automatisch beim ersten Senden (7-Tage-Fenster, nur SHA-256 gespeichert, Reset pro Streamer)
+- Rate-Limit pro IP (Cloudflare-aware), Feldlimits, `/death/silent` max. 20
+- `/test/*` nur im Testmodus, `GET /queue` entfernt
+- WP-Admin-Seite „LOTRO Tracker": Streamer, Charaktere, Zuordnung, Token-Reset, Einstellungen
+- Overlay-Sendeplan: eine gemeinsame URL `https://www.dodaswelt.de/wp-json/lotro-deaths/v1/overlay`, alle Streamer sehen den Tod gleichzeitig; `/death/next` ist No-op (kein Wegklicken mehr möglich)
+- Client/Watcher speichern und senden `token.txt`; REINSTALL behält sie, UNINSTALL entfernt sie
+
+**Tests:** 54 End-to-End-Prüfungen gegen Docker-WordPress (`bash WordPress/tests/run-tests.sh`), Migrationstest 3.0 → 3.1, Browser-Sync-Test (2 Overlays zeitgleich auf die Millisekunde), echter Client gegen Testserver, Code-Review (2 Funde behoben: XSS auf der Admin-Seite, Verhalten bei abgelaufenem Abholfenster) — zusätzlich gefunden und behoben: doppelte Todeszähler bei gleichzeitigen Toden.
+
+**Commits / Release:** `46f193d`, `455c2d7` auf `main` (gepusht); Pre-Release https://github.com/DodasWelt/LOTRO-Death-Tracker/releases/tag/v3.1 — `latest` bleibt v3.0, Streamer bekommen kein Update.
+
+**Offen bei Michael:**
+1. `lotro-death-tracker.zip` vom Release in WordPress hochladen (Plugins → Installieren → Plugin hochladen → ersetzen)
+2. Live-Test: Testmodus an, eigenen Test-Streamer + Test-Charakter anlegen (keinen echten Streamer!), Overlay mit `…/overlay?test=1` prüfen, Testmodus wieder aus
+3. Zur Season 2: `gh release edit v3.1 --prerelease=false --latest`, danach Streamer anlegen (7-Tage-Fenster startet)
+4. Sobald alle Streamer einen Token haben: „Alte Clients zulassen" ausschalten
