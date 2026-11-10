@@ -34,3 +34,12 @@ LOTRO-Death-Tracker-COMPLETE-SUMMARY.md
 
 # Lokale WP-Testumgebung (run-tests.sh kopiert das Plugin hierhin)
 WordPress/tests/.plugin/
+
+# Sensible Daten / lokale Zugangsdaten — nie committen
+.env
+*.env
+.env.*
+.claude/settings.local.json
+
+# Browser-Konsolen-Exporte (StreamElements)
+streamelements.com-*.log
